@@ -3,6 +3,7 @@
 Điểm vào duy nhất để cả nhóm định hướng. Cập nhật 2026-06-25.
 
 ## Trạng thái (đã kiểm thử KHÔNG cần phần cứng)
+- 🌐 **Live:** Dashboard `https://smart-humidity-iot.web.app` · App cấu hình PWA `https://smart-humidity-iot-provision.web.app`
 - ✅ **Firmware**: `pio run` — cả 2 env `esp1-main`, `esp2-sensor` **SUCCESS**.
 - ✅ **Web / PWA / tools**: chạy được offline (mock-esp-server + data-injector); luồng provisioning verify end-to-end qua trình duyệt.
 - ✅ **Đã qua audit logic đa-agent** → sửa 8 lỗi (1 HIGH kênh ESP-NOW, 1 MEDIUM mất cảm biến, 6 low).
@@ -24,6 +25,7 @@
 ## Tài liệu
 | File | Dành cho |
 |---|---|
+| [NGHIEM-THU.md](NGHIEM-THU.md) | ⭐ Đối chiếu yêu cầu + kịch bản demo **chứng minh đã làm đúng** |
 | [CONTRACT.md](CONTRACT.md) | ⭐ Hợp đồng interface dùng chung — đọc trước khi sửa code |
 | [SETUP.md](SETUP.md) | Tạo Firebase project + deploy + seed UID (tóm tắt) |
 | [FIREBASE-GUIDE.md](FIREBASE-GUIDE.md) | ⭐ Hướng dẫn Firebase **chi tiết** click-by-click + chỗ điền code |

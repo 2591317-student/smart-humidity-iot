@@ -6,6 +6,8 @@ và **app provisioning (PWA + QR)** để cấu hình WiFi cho ESP. Phần nâng
 tầng kép và gateway dự phòng.
 
 > 📄 Đề bài gốc: `../IOT Basic & Adv.pdf` · 🔗 Bản tiền nhiệm: https://final-iot-4aa60.web.app/
+>
+> 🌐 **Live:** Dashboard **https://smart-humidity-iot.web.app** · App cấu hình (PWA) **https://smart-humidity-iot-provision.web.app**
 
 ## Kiến trúc
 

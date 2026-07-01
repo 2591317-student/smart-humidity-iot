@@ -2,19 +2,18 @@
   "database": {
     "rules": "firebase/database.rules.json"
   },
-  "hosting": {
-    "public": "web",
-    "ignore": [
-      "firebase.json",
-      "**/.*",
-      "**/node_modules/**",
-      "firmware/**",
-      "mobile/**",
-      "tools/**",
-      "docs/**"
-    ],
-    "rewrites": [
-      { "source": "**", "destination": "/index.html" }
-    ]
-  }
+  "hosting": [
+    {
+      "site": "smart-humidity-iot",
+      "public": "web",
+      "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
+      "rewrites": [ { "source": "**", "destination": "/index.html" } ]
+    },
+    {
+      "site": "smart-humidity-iot-provision",
+      "public": "mobile",
+      "ignore": ["firebase.json", "**/.*", "**/node_modules/**", "README.md"],
+      "rewrites": [ { "source": "**", "destination": "/index.html" } ]
+    }
+  ]
 }
