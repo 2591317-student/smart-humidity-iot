@@ -1,0 +1,27 @@
+{
+  "name": "Smart Humidity IoT — Cấu hình thiết bị",
+  "short_name": "Cấu hình IoT",
+  "description": "App cấu hình WiFi cho thiết bị ESP qua QR + REST (provisioning) của hệ thống Smart Humidity IoT.",
+  "lang": "vi",
+  "dir": "ltr",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f1f5f9",
+  "theme_color": "#0ea5e9",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%230ea5e9'/%3E%3Cpath d='M50 18C50 18 26 46 26 64a24 24 0 0 0 48 0C74 46 50 18 50 18Z' fill='white'/%3E%3C/svg%3E",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%230ea5e9'/%3E%3Cpath d='M50 18C50 18 26 46 26 64a24 24 0 0 0 48 0C74 46 50 18 50 18Z' fill='white'/%3E%3C/svg%3E",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

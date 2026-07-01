@@ -1,0 +1,495 @@
+// ============================================================================
+//  ESP1 — MAIN NODE (Smart Humidity IoT)
+//
+//  Vai trò (CONTRACT mục 1, role = "main"):
+//    - Nhận gói cảm biến (SensorPacket) từ ESP2 qua ESP-NOW.
+//    - Kết nối WiFi (STA) + đăng nhập Firebase bằng tài khoản THIẾT BỊ (email/pass).
+//    - Lắng nghe /config qua stream (hset, deadband do admin web chỉnh).
+//    - Chạy thuật toán DEADBAND -> điều khiển relay máy phun sương (GPIO 26).
+//    - Đẩy /sensor (temperature, humidity, timestamp) và /status (mist, tank,
+//      pump, esp1Online, gateway, lastSeen) lên Firebase định kỳ ~4s.
+//
+//  Tham chiếu:
+//    - docs/CONTRACT.md  : mục 2 (data model + thuật toán Deadband), 4 (ESP-NOW),
+//                          5 (provisioning), 7 (Preferences), 8 (GPIO).
+//    - firmware/lib/common/protocol.h     : struct SensorPacket, ESPNOW_CHANNEL.
+//    - firmware/lib/common/provisioning.h : Provisioning::* (SoftAP cấu hình).
+//    - firebase/database.rules.json       : rules /sensor /status /config.
+//
+//  Thư viện Firebase: "Firebase Arduino Client Library for ESP8266 and ESP32"
+//    của mobizt (Firebase_ESP_Client) v4.x — dùng FirebaseData / FirebaseAuth /
+//    FirebaseConfig, Firebase.begin(&config,&auth), Firebase.RTDB.* và stream.
+// ============================================================================
+
+#include <Arduino.h>
+#include <WiFi.h>
+#include <esp_now.h>
+#include <esp_wifi.h>          // esp_wifi_set_channel() — ép kênh ESP-NOW
+#include <time.h>              // time(), configTime() cho NTP (timestamp epoch)
+
+#include <Firebase_ESP_Client.h>
+// Các addon hỗ trợ token/RTDB của thư viện mobizt (bắt buộc include theo doc v4).
+#include <addons/TokenHelper.h>
+#include <addons/RTDBHelper.h>
+
+#include "protocol.h"          // SensorPacket, MSG_SENSOR_DATA, ESPNOW_CHANNEL, FW_VERSION
+#include "provisioning.h"      // Provisioning::*, ProvConfig
+#include "control.h"           // deadbandDecide() — thuật toán Deadband (tách ra để unit-test)
+
+// ============================================================================
+//  CẤU HÌNH FIREBASE — ĐIỀN THEO PROJECT CỦA BẠN
+//  CONTRACT hiện CHƯA lưu api_key/database_url trong Preferences (mục 7), nên ta
+//  để dạng #define hằng số ở đây. Lấy từ Firebase Console:
+//    - API_KEY      : Project settings -> General -> Web API Key.
+//    - DATABASE_URL : Realtime Database -> URL (region asia-southeast1).
+//  Còn email/password tài khoản thiết bị lấy từ provisioning (cfg.devEmail/devPass).
+// ============================================================================
+#define FB_API_KEY      "AIzaSyCu_UyCLAuQxJkFIas9KS_K1vcN6bliQvU"
+#define FB_DATABASE_URL "https://smart-humidity-iot-default-rtdb.asia-southeast1.firebasedatabase.app/"
+
+// ============================================================================
+//  CẤU HÌNH GPIO (CONTRACT mục 8) — đổi được tại đây.
+// ============================================================================
+#define PIN_RELAY          26   // Relay máy phun sương (OUTPUT)
+#define RELAY_ACTIVE_HIGH  1    // 1 = relay kích mức CAO (HIGH bật); 0 = kích mức THẤP
+
+// Nâng cao (Advanced): cảm biến mức nước / tiếp điểm bơm — chỉ ĐỌC.
+//   GPIO 34/35 là chân chỉ-INPUT (không pull nội), nối qua mạch chia/điện trở ngoài.
+#define PIN_TANK_FLOAT     34   // Phao báo cạn (nâng cao). HIGH = còn nước (tuỳ mạch).
+#define PIN_PUMP_SENSE     35   // Tiếp điểm bơm châm nước đang chạy (nâng cao).
+#define ENABLE_ADVANCED_WATER 0 // 0 = Basic (tank="full", pump=false cố định).
+                                //   Đặt 1 khi đã đấu nối phần cứng nâng cao.
+
+// ============================================================================
+//  HẰNG SỐ THỜI GIAN / CHU KỲ.
+// ============================================================================
+static const uint32_t PUSH_INTERVAL_MS   = 4000;   // chu kỳ đẩy sensor/status (~4s)
+static const uint32_t WIFI_RETRY_MS       = 5000;   // chu kỳ thử reconnect WiFi
+static const uint32_t SENSOR_STALE_MS     = 15000;  // quá lâu không có gói ESP-NOW -> coi cảm biến mất
+
+// ============================================================================
+//  ĐỐI TƯỢNG FIREBASE.
+// ============================================================================
+FirebaseData   fbdo;        // dùng cho các lệnh ghi (set*) thông thường
+FirebaseData   fbStream;    // RIÊNG cho stream /config (mobizt yêu cầu tách object)
+FirebaseAuth   auth;
+FirebaseConfig config;
+
+// ============================================================================
+//  TRẠNG THÁI TOÀN CỤC (chia sẻ giữa loop và các callback).
+// ============================================================================
+ProvConfig g_cfg;                 // cấu hình nạp từ Preferences
+
+// --- Tham số điều khiển (khởi tạo từ provisioning, cập nhật live qua stream /config) ---
+volatile float g_hset     = 70.0f;   // ngưỡng độ ẩm đặt (%RH)
+volatile float g_deadband = 5.0f;    // vùng chết (±)
+
+// --- Dữ liệu cảm biến mới nhất nhận từ ESP2 (ghi trong recv callback) ---
+volatile float    g_latestTemp = NAN;   // °C
+volatile float    g_latestHumi = NAN;   // %RH
+volatile uint32_t g_latestSeq  = 0;     // seq gói gần nhất
+volatile bool     g_hasNewData = false; // cờ có dữ liệu mới chưa xử lý
+volatile uint32_t g_lastRecvMs = 0;     // millis() lúc nhận gói gần nhất
+
+// --- Trạng thái relay/điều khiển ---
+bool g_mist = false;              // máy phun đang bật? (status/mist)
+bool g_sensorStale = false;       // true khi mất gói ESP2 quá lâu -> NGỪNG đẩy /sensor
+
+// --- Mốc thời gian quản lý chu kỳ ---
+uint32_t g_lastPushMs      = 0;
+uint32_t g_lastWifiTryMs   = 0;
+
+// --- Cờ Firebase đã khởi tạo ---
+bool g_fbInited      = false;
+bool g_streamStarted = false;
+
+// ============================================================================
+//  TIỆN ÍCH.
+// ============================================================================
+
+// Áp mức điện cho relay theo cấu hình RELAY_ACTIVE_HIGH.
+//   on=true  -> bật phun sương; on=false -> tắt.
+void applyRelay(bool on) {
+#if RELAY_ACTIVE_HIGH
+  digitalWrite(PIN_RELAY, on ? HIGH : LOW);
+#else
+  digitalWrite(PIN_RELAY, on ? LOW : HIGH);
+#endif
+}
+
+// Lấy epoch giây hiện tại nếu đã đồng bộ NTP, ngược lại 0 (CONTRACT mục 2 cho phép 0).
+uint32_t nowEpoch() {
+  time_t t = time(nullptr);
+  // Trước khi NTP đồng bộ, time() trả giá trị rất nhỏ (gần 1970) -> coi như chưa có.
+  if (t < 1700000000) return 0;   // ~2023-11 trở đi mới coi là hợp lệ
+  return (uint32_t)t;
+}
+
+// Chuyển chuỗi MAC "11:22:33:44:55:66" -> 6 byte. Trả false nếu sai định dạng.
+bool parseMac(const String& macStr, uint8_t out[6]) {
+  if (macStr.length() < 17) return false;       // "xx:xx:xx:xx:xx:xx"
+  int values[6];
+  int n = sscanf(macStr.c_str(), "%x:%x:%x:%x:%x:%x",
+                 &values[0], &values[1], &values[2],
+                 &values[3], &values[4], &values[5]);
+  if (n != 6) return false;
+  for (int i = 0; i < 6; i++) out[i] = (uint8_t)values[i];
+  return true;
+}
+
+// ============================================================================
+//  ESP-NOW — nhận SensorPacket từ ESP2.
+//
+//  KÊNH ESP-NOW (CONTRACT mục 4) — chiến lược đồng bộ kênh tự động:
+//    ESP-NOW chạy trên KÊNH của giao diện WiFi. ESP1 là STA nối router nên BẮT BUỘC
+//    ở đúng kênh của router => ESP1 KHÔNG tự ép kênh. ESP2 (không nối WiFi) sẽ QUÉT
+//    tìm SSID router (đã provisioning) để biết kênh router rồi phát ESP-NOW trùng
+//    kênh đó. Nhờ vậy 2 board luôn cùng kênh dù router ở kênh BẤT KỲ — không còn phụ
+//    thuộc kênh cố định. (Xem firmware/src/esp2_sensor/main.cpp::discoverRouterChannel.)
+// ============================================================================
+
+// Chữ ký callback recv khác nhau giữa các phiên bản ESP32 Arduino core:
+//   - Core <= 2.x : void cb(const uint8_t* mac, const uint8_t* data, int len)
+//   - Core >= 3.x : void cb(const esp_now_recv_info_t* info, const uint8_t* data, int len)
+// Dùng macro để biên dịch đúng theo phiên bản đang có.
+#if defined(ESP_ARDUINO_VERSION) && (ESP_ARDUINO_VERSION >= ESP_ARDUINO_VERSION_VAL(3, 0, 0))
+  #define ESPNOW_RECV_SIGNATURE const esp_now_recv_info_t *info, const uint8_t *data, int len
+#else
+  #define ESPNOW_RECV_SIGNATURE const uint8_t *mac, const uint8_t *data, int len
+#endif
+
+void onEspNowRecv(ESPNOW_RECV_SIGNATURE) {
+  // Chỉ chấp nhận gói đúng kích thước và đúng loại bản tin.
+  if (len != (int)sizeof(SensorPacket)) return;
+
+  SensorPacket pkt;
+  memcpy(&pkt, data, sizeof(SensorPacket));
+  if (pkt.msgType != MSG_SENSOR_DATA) return;
+
+  // Lưu dữ liệu mới nhất + dựng cờ để loop() xử lý Deadband + đẩy Firebase.
+  g_latestTemp = pkt.temperature;
+  g_latestHumi = pkt.humidity;
+  g_latestSeq  = pkt.seq;
+  g_lastRecvMs = millis();
+  g_hasNewData = true;
+  g_sensorStale = false;   // có gói mới -> dữ liệu cảm biến lại hợp lệ
+
+  // Log gọn (tránh in trong ngắt quá dài; ESP-NOW recv chạy ở task riêng nên OK).
+  Serial.printf("[ESP-NOW] seq=%lu  T=%.1f C  H=%.1f %%RH\n",
+                (unsigned long)pkt.seq, pkt.temperature, pkt.humidity);
+}
+
+// Khởi tạo ESP-NOW: init, ép kênh, đăng ký recv callback, add peer ESP2 (nếu có MAC).
+void setupEspNow() {
+  // KHÔNG ép kênh ở ESP1: ESP1 là STA đã nối router nên phải giữ đúng kênh router.
+  // ESP-NOW chạy ngay trên kênh STA này; ESP2 sẽ tự dò để phát trùng kênh.
+  Serial.printf("[ESP-NOW] Dung kenh STA hien tai = %d (theo router)\n", WiFi.channel());
+
+  if (esp_now_init() != ESP_OK) {
+    Serial.println(F("[ESP-NOW] init THAT BAI!"));
+    return;
+  }
+
+  // Đăng ký callback nhận.
+  esp_now_register_recv_cb(onEspNowRecv);
+
+  // Add peer ESP2 (MAC nạp lúc provisioning -> cfg.peerMac). Nếu để trống thì
+  // vẫn nhận được gói broadcast/unicast nhờ recv callback, nhưng add peer giúp
+  // ổn định và là tiền đề cho gửi ACK 2 chiều sau này.
+  uint8_t peer[6];
+  if (parseMac(g_cfg.peerMac, peer)) {
+    esp_now_peer_info_t peerInfo = {};
+    memcpy(peerInfo.peer_addr, peer, 6);
+    peerInfo.channel = 0;                // 0 = dùng kênh hiện tại của STA (kênh router)
+    peerInfo.encrypt = false;
+    if (esp_now_add_peer(&peerInfo) == ESP_OK) {
+      Serial.printf("[ESP-NOW] Da add peer ESP2: %s (kenh %d)\n",
+                    g_cfg.peerMac.c_str(), WiFi.channel());
+    } else {
+      Serial.println(F("[ESP-NOW] add peer that bai (van nhan duoc goi)."));
+    }
+  } else {
+    Serial.println(F("[ESP-NOW] Chua co peerMac hop le -> chi lang nghe."));
+  }
+
+  Serial.printf("[ESP-NOW] San sang, MAC ESP1 (STA) = %s, kenh = %d\n",
+                WiFi.macAddress().c_str(), WiFi.channel());
+}
+
+// ============================================================================
+//  STREAM /config — admin web chỉnh hset/deadband, ESP1 nhận realtime.
+// ============================================================================
+
+// Callback dữ liệu stream: gọi mỗi khi /config (hoặc node con) thay đổi.
+void onConfigStream(FirebaseStream data) {
+  // data.dataPath() là đường dẫn tương đối so với /config đang stream.
+  //   "/"         -> cả object config (lần đầu / khi set nguyên cụm)
+  //   "/hset"     -> chỉ hset đổi
+  //   "/deadband" -> chỉ deadband đổi
+  String path = data.dataPath();
+
+  if (path == "/" && data.dataType() == "json") {
+    // Cả object: parse JSON để lấy hset + deadband.
+    FirebaseJson* json = data.to<FirebaseJson*>();
+    FirebaseJsonData res;
+    if (json->get(res, "hset"))     g_hset     = res.to<float>();
+    if (json->get(res, "deadband")) g_deadband = res.to<float>();
+  } else if (path == "/hset") {
+    g_hset = data.to<float>();
+  } else if (path == "/deadband") {
+    g_deadband = data.to<float>();
+  }
+
+  Serial.printf("[CONFIG] Cap nhat: hset=%.1f  deadband=%.1f  (path=%s)\n",
+                (float)g_hset, (float)g_deadband, path.c_str());
+}
+
+// Callback báo timeout/khôi phục stream.
+void onConfigStreamTimeout(bool timeout) {
+  if (timeout) {
+    Serial.println(F("[CONFIG] Stream timeout — thu viện se tu ket noi lai."));
+  }
+}
+
+// ============================================================================
+//  FIREBASE — khởi tạo + bắt đầu stream.
+// ============================================================================
+void setupFirebase() {
+  Serial.print(F("[FB] Firebase Client v"));
+  Serial.println(FIREBASE_CLIENT_VERSION);
+
+  // Cấu hình API key + database URL.
+  config.api_key      = FB_API_KEY;
+  config.database_url = FB_DATABASE_URL;
+
+  // Đăng nhập bằng TÀI KHOẢN THIẾT BỊ (email/password) nạp lúc provisioning.
+  //   UID tài khoản này phải được seed vào /devices/<UID>=true để qua security rules.
+  auth.user.email    = g_cfg.devEmail.c_str();
+  auth.user.password = g_cfg.devPass.c_str();
+
+  // Callback theo dõi trạng thái token (in chi tiết để dễ debug đăng nhập).
+  config.token_status_callback = tokenStatusCallback;  // từ addons/TokenHelper.h
+
+  // Tự thử lại khi token lỗi.
+  config.max_token_generation_retry = 5;
+
+  // Cho phép tự reconnect WiFi do thư viện quản lý (kèm reconnect của ta trong loop).
+  Firebase.reconnectWiFi(true);
+
+  // Bắt đầu Firebase.
+  Firebase.begin(&config, &auth);
+
+  // Buffer/timeout cho stream (giá trị an toàn cho ESP32).
+  fbStream.setBSSLBufferSize(2048, 512);
+  fbStream.setResponseSize(2048);
+  fbdo.setBSSLBufferSize(2048, 512);
+  fbdo.setResponseSize(2048);
+
+  g_fbInited = true;
+  Serial.println(F("[FB] Da khoi tao Firebase (dang lay token...)."));
+}
+
+// Bắt đầu stream /config (gọi sau khi Firebase.ready() lần đầu).
+void startConfigStream() {
+  if (g_streamStarted) return;
+  if (!Firebase.RTDB.beginStream(&fbStream, "/config")) {
+    Serial.printf("[CONFIG] beginStream LOI: %s\n", fbStream.errorReason().c_str());
+    return;
+  }
+  Firebase.RTDB.setStreamCallback(&fbStream, onConfigStream, onConfigStreamTimeout);
+  g_streamStarted = true;
+  Serial.println(F("[CONFIG] Da bat stream /config."));
+}
+
+// ============================================================================
+//  WIFI — kết nối + reconnect đơn giản.
+// ============================================================================
+void connectWiFi() {
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(g_cfg.ssid.c_str(), g_cfg.pass.c_str());
+  Serial.printf("[WiFi] Dang ket noi toi \"%s\" ...\n", g_cfg.ssid.c_str());
+
+  // Chờ tối đa ~15s ở setup; nếu chưa được, loop() sẽ tiếp tục thử lại.
+  uint32_t start = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - start < 15000) {
+    delay(300);
+    Serial.print('.');
+  }
+  Serial.println();
+
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.printf("[WiFi] Da ket noi. IP=%s, kenh STA=%d\n",
+                  WiFi.localIP().toString().c_str(), WiFi.channel());
+    // Cấu hình NTP để có timestamp epoch (GMT+7 = 25200s; chỉ ảnh hưởng hiển thị
+    // local, ta vẫn lưu epoch UTC qua time()).
+    configTime(0, 0, "pool.ntp.org", "time.nist.gov");
+  } else {
+    Serial.println(F("[WiFi] Chua ket noi duoc — se thu lai trong loop()."));
+  }
+}
+
+// ============================================================================
+//  THUẬT TOÁN DEADBAND (CONTRACT mục 2).
+//  Máy phun sương LÀM TĂNG độ ẩm:
+//    humidity < hset - deadband  -> BẬT  (mist=true)
+//    humidity > hset + deadband  -> TẮT  (mist=false)
+//    nằm giữa                     -> giữ nguyên (chống nhảy relay)
+// ============================================================================
+void runDeadband(float humidity) {
+  if (isnan(humidity)) return;   // chưa có dữ liệu hợp lệ
+
+  // Dùng hàm thuần deadbandDecide() (control.h) — cùng logic đã được unit-test.
+  bool newMist = deadbandDecide(humidity, (float)g_hset, (float)g_deadband, g_mist);
+  if (newMist != g_mist) {
+    g_mist = newMist;
+    applyRelay(newMist);
+    Serial.printf("[DEADBAND] H=%.1f hset=%.1f db=%.1f -> %s phun suong\n",
+                  humidity, (float)g_hset, (float)g_deadband, newMist ? "BAT" : "TAT");
+  }
+  // Trong vùng chết -> newMist == g_mist -> không đổi, không log.
+}
+
+// ============================================================================
+//  ĐẨY DỮ LIỆU LÊN FIREBASE (/sensor + /status).
+// ============================================================================
+void pushToFirebase() {
+  uint32_t ts = nowEpoch();
+
+  // ---- /sensor ----
+  // Chỉ đẩy khi có dữ liệu hợp lệ VÀ không bị stale. Khi stale (mất gói ESP2 quá lâu)
+  // ta NGỪNG ghi /sensor để timestamp không tăng giả -> web thấy số đo "đứng" đúng thực tế.
+  if (!g_sensorStale && !isnan(g_latestTemp) && !isnan(g_latestHumi)) {
+    bool ok1 = Firebase.RTDB.setFloat(&fbdo, "/sensor/temperature", g_latestTemp);
+    bool ok2 = Firebase.RTDB.setFloat(&fbdo, "/sensor/humidity",    g_latestHumi);
+    bool ok3 = Firebase.RTDB.setInt(  &fbdo, "/sensor/timestamp",   (int)ts);
+    if (!(ok1 && ok2 && ok3)) {
+      Serial.printf("[FB] Ghi /sensor loi: %s\n", fbdo.errorReason().c_str());
+    }
+  }
+
+  // ---- Trạng thái nước (nâng cao) ----
+  String tank = "full";   // Basic: mặc định còn nước
+  bool   pump = false;    // Basic: mặc định bơm không chạy
+#if ENABLE_ADVANCED_WATER
+  // Đọc phao báo cạn: tuỳ mạch mà HIGH=còn nước hay cạn. Ở đây quy ước:
+  //   PIN_TANK_FLOAT == HIGH -> còn nước ("full"); LOW -> cạn ("empty").
+  // Hiệu chỉnh theo phần cứng thực tế khi đấu nối.
+  tank = (digitalRead(PIN_TANK_FLOAT) == HIGH) ? "full" : "empty";
+  // Tiếp điểm bơm: HIGH -> bơm đang chạy.
+  pump = (digitalRead(PIN_PUMP_SENSE) == HIGH);
+#endif
+
+  // ---- /status ----
+  bool s1 = Firebase.RTDB.setBool(  &fbdo, "/status/mist",       g_mist);
+  bool s2 = Firebase.RTDB.setString(&fbdo, "/status/tank",       tank);
+  bool s3 = Firebase.RTDB.setBool(  &fbdo, "/status/pump",       pump);
+  bool s4 = Firebase.RTDB.setBool(  &fbdo, "/status/esp1Online", true);
+  bool s5 = Firebase.RTDB.setString(&fbdo, "/status/gateway",    "esp1");
+  bool s6 = Firebase.RTDB.setInt(   &fbdo, "/status/lastSeen",   (int)ts);
+  if (!(s1 && s2 && s3 && s4 && s5 && s6)) {
+    Serial.printf("[FB] Ghi /status loi: %s\n", fbdo.errorReason().c_str());
+  } else {
+    Serial.printf("[FB] Da day: T=%.1f H=%.1f mist=%d tank=%s pump=%d ts=%lu\n",
+                  g_latestTemp, g_latestHumi, g_mist, tank.c_str(), pump,
+                  (unsigned long)ts);
+  }
+}
+
+// ============================================================================
+//  SETUP.
+// ============================================================================
+void setup() {
+  Serial.begin(115200);
+  delay(200);
+  Serial.println();
+  Serial.println(F("=== ESP1 MAIN NODE — Smart Humidity IoT ==="));
+  Serial.print  (F("Firmware version: ")); Serial.println(FW_VERSION);
+
+  // --- Chưa cấu hình -> vào chế độ provisioning (SoftAP) rồi DỪNG setup ---
+  if (!Provisioning::isProvisioned()) {
+    Serial.println(F("[BOOT] Chua cau hinh -> bat SoftAP provisioning."));
+    Provisioning::beginAP("main");   // role "main" (CONTRACT mục 1)
+    return;                          // loop() se goi Provisioning::handle()
+  }
+
+  // --- Đã cấu hình -> nạp cấu hình từ Preferences ---
+  g_cfg = Provisioning::load();
+  g_hset     = (float)g_cfg.hset;       // khởi tạo tham số điều khiển từ provisioning
+  g_deadband = (float)g_cfg.deadband;
+  Serial.printf("[BOOT] Da cau hinh. SSID=%s, devEmail=%s, peerMac=%s, hset=%d, deadband=%d\n",
+                g_cfg.ssid.c_str(), g_cfg.devEmail.c_str(), g_cfg.peerMac.c_str(),
+                g_cfg.hset, g_cfg.deadband);
+
+  // --- Cấu hình chân relay: OUTPUT, mặc định TẮT (an toàn) ---
+  pinMode(PIN_RELAY, OUTPUT);
+  g_mist = false;
+  applyRelay(false);                 // bảo đảm relay TẮT khi khởi động
+
+#if ENABLE_ADVANCED_WATER
+  // Chân nâng cao chỉ-INPUT (GPIO 34/35 không có pull nội).
+  pinMode(PIN_TANK_FLOAT, INPUT);
+  pinMode(PIN_PUMP_SENSE, INPUT);
+#endif
+
+  // --- WiFi STA + kết nối router ---
+  connectWiFi();
+
+  // --- ESP-NOW (sau khi WiFi.mode(STA) đã set trong connectWiFi) ---
+  setupEspNow();
+
+  // --- Firebase (api_key/database_url hằng + email/pass từ provisioning) ---
+  setupFirebase();
+
+  Serial.println(F("[BOOT] Setup hoan tat -> vao loop()."));
+}
+
+// ============================================================================
+//  LOOP.
+// ============================================================================
+void loop() {
+  // --- Chế độ provisioning: chỉ phục vụ HTTP rồi thoát ---
+  if (Provisioning::inAPMode()) {
+    Provisioning::handle();          // tự ESP.restart() ~1s sau khi /provision OK
+    return;
+  }
+
+  uint32_t now = millis();
+
+  // --- Reconnect WiFi đơn giản nếu rớt ---
+  if (WiFi.status() != WL_CONNECTED) {
+    if (now - g_lastWifiTryMs >= WIFI_RETRY_MS) {
+      g_lastWifiTryMs = now;
+      Serial.println(F("[WiFi] Mat ket noi -> thu reconnect..."));
+      WiFi.disconnect();
+      WiFi.begin(g_cfg.ssid.c_str(), g_cfg.pass.c_str());
+    }
+    // Vẫn tiếp tục chạy Deadband bên dưới (điều khiển relay không phụ thuộc mạng).
+  }
+
+  // --- Xử lý dữ liệu cảm biến mới -> chạy Deadband ngay khi có gói ---
+  if (g_hasNewData) {
+    g_hasNewData = false;
+    runDeadband(g_latestHumi);
+  }
+
+  // --- An toàn: nếu lâu không có gói cảm biến -> giữ relay TẮT (tránh phun mù) ---
+  if (g_lastRecvMs != 0 && (now - g_lastRecvMs > SENSOR_STALE_MS)) {
+    if (!g_sensorStale) {
+      g_sensorStale = true;
+      Serial.println(F("[SAFETY] Mat du lieu cam bien qua lau -> NGUNG day /sensor + TAT phun."));
+    }
+    if (g_mist) { g_mist = false; applyRelay(false); }
+  }
+
+  // --- Khi Firebase sẵn sàng: bật stream /config (1 lần) + đẩy dữ liệu định kỳ ---
+  if (g_fbInited && Firebase.ready()) {
+    // Bắt đầu stream /config sau khi token sẵn sàng.
+    startConfigStream();
+
+    // Đẩy /sensor + /status mỗi ~4s.
+    if (now - g_lastPushMs >= PUSH_INTERVAL_MS) {
+      g_lastPushMs = now;
+      pushToFirebase();
+    }
+  }
+}

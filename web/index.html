@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Smart Humidity IoT — Giám sát & Điều khiển Độ ẩm</title>
+  <meta name="description" content="Dashboard giám sát nhiệt độ, độ ẩm và điều khiển máy phun sương theo thuật toán Deadband." />
+
+  <!-- TailwindCSS (play CDN) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Chart.js v4 (CDN, global window.Chart) -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <!-- Style phụ + animation cảnh báo -->
+  <link rel="stylesheet" href="./css/styles.css" />
+  <!-- Font Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+</head>
+<body class="antialiased">
+
+  <!-- ====================================================================== -->
+  <!--  HỘP CẢNH BÁO CẠN NƯỚC (nổi trên cùng, nhấp nháy) — alarm.js điều khiển -->
+  <!-- ====================================================================== -->
+  <div id="alarmBox" hidden
+       class="fixed top-0 inset-x-0 z-50 px-4 py-4 text-center font-extrabold text-lg sm:text-xl shadow-2xl">
+    <span class="alarm-icon mr-2">⚠</span>
+    CẢNH BÁO CHỦ SỞ HỮU: BỒN CẠN NƯỚC - ĐANG TỰ ĐỘNG CHÂM
+    <span class="alarm-icon ml-2">⚠</span>
+  </div>
+
+  <!-- ====================================================================== -->
+  <!--  MÀN HÌNH WELCOME (chưa đăng nhập)                                      -->
+  <!-- ====================================================================== -->
+  <main id="welcomeScreen" class="min-h-screen flex items-center justify-center px-4 fade-in">
+    <div class="glass rounded-3xl p-8 sm:p-12 max-w-md w-full text-center shadow-2xl">
+      <div class="mx-auto w-20 h-20 rounded-2xl bg-gradient-to-br from-sky-500 to-emerald-500 flex items-center justify-center text-4xl mb-6 shadow-lg">
+        💧
+      </div>
+      <h1 class="text-2xl sm:text-3xl font-extrabold text-white mb-2">Smart Humidity IoT</h1>
+      <p class="text-slate-300 mb-1">Hệ thống giám sát &amp; điều khiển độ ẩm tự động</p>
+      <p class="text-slate-400 text-sm mb-8">Đăng nhập bằng Google để xem dashboard và cấu hình thiết bị.</p>
+
+      <button id="btnLogin"
+              class="w-full flex items-center justify-center gap-3 bg-white text-slate-800 font-semibold rounded-xl px-5 py-3 transition-soft hover:bg-slate-100 active:scale-[0.98] shadow-lg disabled:opacity-70">
+        <!-- Nhãn nút (icon Google) được app.js đổ vào -->
+        Đăng nhập với Google
+      </button>
+
+      <p id="loginError" hidden class="mt-4 text-sm text-red-300 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2"></p>
+
+      <p class="mt-8 text-xs text-slate-500">
+        Người chưa đăng nhập không thể truy cập dữ liệu (theo Security Rules).
+      </p>
+    </div>
+  </main>
+
+  <!-- ====================================================================== -->
+  <!--  MÀN HÌNH DASHBOARD (đã đăng nhập)                                      -->
+  <!-- ====================================================================== -->
+  <div id="dashboardScreen" hidden class="min-h-screen flex flex-col fade-in">
+
+    <!-- Header -->
+    <header class="glass sticky top-0 z-30 border-b border-white/10">
+      <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
+        <div class="flex items-center gap-3 min-w-0">
+          <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-sky-500 to-emerald-500 flex items-center justify-center text-xl shrink-0">💧</div>
+          <div class="min-w-0">
+            <h1 class="text-white font-bold leading-tight truncate">Smart Humidity IoT</h1>
+            <p class="text-xs text-slate-400 leading-tight">Dashboard giám sát &amp; điều khiển</p>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-3">
+          <div class="hidden sm:flex flex-col items-end leading-tight">
+            <div class="flex items-center gap-2">
+              <span id="userName" class="text-white font-semibold text-sm truncate max-w-[160px]"></span>
+              <span id="adminBadge" class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-gray-500/20 text-gray-300"></span>
+            </div>
+            <span id="userEmail" class="text-xs text-slate-400 truncate max-w-[200px]"></span>
+          </div>
+          <img id="userAvatar" alt="avatar" referrerpolicy="no-referrer"
+               class="w-9 h-9 rounded-full border border-white/20 object-cover" hidden />
+          <button id="btnLogout"
+                  class="text-sm font-medium text-slate-200 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg px-3 py-2 transition-soft">
+            Đăng xuất
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Nội dung -->
+    <div class="max-w-6xl mx-auto w-full px-4 py-6 flex-1 space-y-6">
+
+      <!-- Hàng metric + trạng thái online -->
+      <section class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <!-- Nhiệt độ -->
+        <div class="glass rounded-2xl p-6 flex items-center justify-between">
+          <div>
+            <p class="text-slate-400 text-sm mb-1">Nhiệt độ</p>
+            <p class="text-white"><span id="tempValue" class="metric-value text-5xl font-extrabold">--</span><span class="text-2xl font-semibold text-slate-300"> °C</span></p>
+          </div>
+          <div class="text-5xl">🌡️</div>
+        </div>
+        <!-- Độ ẩm -->
+        <div class="glass rounded-2xl p-6 flex items-center justify-between">
+          <div>
+            <p class="text-slate-400 text-sm mb-1">Độ ẩm</p>
+            <p class="text-white"><span id="humValue" class="metric-value text-5xl font-extrabold">--</span><span class="text-2xl font-semibold text-slate-300"> %RH</span></p>
+          </div>
+          <div class="text-5xl">💦</div>
+        </div>
+      </section>
+
+      <!-- Dòng trạng thái cập nhật + online -->
+      <div class="flex flex-wrap items-center justify-between gap-2 text-sm">
+        <span id="updatedAt" class="text-slate-400">Cập nhật: --</span>
+        <span class="flex items-center gap-2">
+          <span id="onlineDot" class="dot dot-offline"></span>
+          <span id="onlineText" class="text-gray-400 font-medium">Mất kết nối</span>
+        </span>
+      </div>
+
+      <!-- Panel trạng thái thiết bị -->
+      <section class="glass rounded-2xl p-6">
+        <h2 class="text-white font-bold mb-4 flex items-center gap-2">⚙️ Trạng thái hệ thống</h2>
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div class="bg-white/5 rounded-xl p-4 flex flex-col gap-2">
+            <span class="text-slate-400 text-sm">Máy phun sương</span>
+            <span id="stMist" class="px-3 py-1 rounded-full text-sm font-semibold bg-gray-600/30 text-gray-300 w-max">—</span>
+          </div>
+          <div class="bg-white/5 rounded-xl p-4 flex flex-col gap-2">
+            <span class="text-slate-400 text-sm">Bồn nước</span>
+            <span id="stTank" class="px-3 py-1 rounded-full text-sm font-semibold bg-gray-600/30 text-gray-300 w-max">—</span>
+          </div>
+          <div class="bg-white/5 rounded-xl p-4 flex flex-col gap-2">
+            <span class="text-slate-400 text-sm">Bơm châm nước</span>
+            <span id="stPump" class="px-3 py-1 rounded-full text-sm font-semibold bg-gray-600/30 text-gray-300 w-max">—</span>
+          </div>
+          <div class="bg-white/5 rounded-xl p-4 flex flex-col gap-2">
+            <span class="text-slate-400 text-sm">Gateway</span>
+            <span id="stGateway" class="px-3 py-1 rounded-full text-sm font-semibold bg-gray-600/30 text-gray-300 w-max">—</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Biểu đồ realtime -->
+      <section class="glass rounded-2xl p-6">
+        <h2 class="text-white font-bold mb-4 flex items-center gap-2">📈 Biểu đồ realtime (60 điểm gần nhất)</h2>
+        <div class="relative h-64 sm:h-80">
+          <canvas id="sensorChart"></canvas>
+        </div>
+      </section>
+
+      <!-- Form cấu hình -->
+      <section class="glass rounded-2xl p-6">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-white font-bold flex items-center gap-2">🎛️ Cấu hình Deadband</h2>
+          <span id="readonlyNote" hidden class="text-xs font-medium text-amber-300 bg-amber-500/15 border border-amber-500/30 rounded-full px-3 py-1">
+            Chỉ xem — bạn không phải admin
+          </span>
+        </div>
+
+        <form id="configForm" class="space-y-5">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <!-- Hset -->
+            <div>
+              <label for="inputHset" class="block text-sm text-slate-300 mb-1">Ngưỡng độ ẩm đặt (Hₛₑₜ)</label>
+              <div class="relative">
+                <input id="inputHset" type="number" min="0" max="100" step="1" value="70"
+                       class="w-full bg-white/5 border border-white/15 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-sky-500/60" />
+                <span class="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 text-sm">%RH</span>
+              </div>
+              <p class="text-xs text-slate-500 mt-1">Khoảng hợp lệ: 0–100</p>
+            </div>
+            <!-- Deadband -->
+            <div>
+              <label for="inputDeadband" class="block text-sm text-slate-300 mb-1">Vùng chết (Deadband ±)</label>
+              <div class="relative">
+                <input id="inputDeadband" type="number" min="0" max="50" step="1" value="5"
+                       class="w-full bg-white/5 border border-white/15 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-sky-500/60" />
+                <span class="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 text-sm">%RH</span>
+              </div>
+              <p class="text-xs text-slate-500 mt-1">Khoảng hợp lệ: 0–50</p>
+            </div>
+          </div>
+
+          <!-- Max / Min suy ra -->
+          <div class="grid grid-cols-2 gap-4">
+            <div class="bg-sky-500/10 border border-sky-500/25 rounded-xl px-4 py-3">
+              <p class="text-xs text-sky-300/80">Ngưỡng TẮT phun (Max = Hₛₑₜ + Deadband)</p>
+              <p id="derivedMax" class="text-lg font-bold text-sky-200">— %RH</p>
+            </div>
+            <div class="bg-emerald-500/10 border border-emerald-500/25 rounded-xl px-4 py-3">
+              <p class="text-xs text-emerald-300/80">Ngưỡng BẬT phun (Min = Hₛₑₜ − Deadband)</p>
+              <p id="derivedMin" class="text-lg font-bold text-emerald-200">— %RH</p>
+            </div>
+          </div>
+
+          <button id="btnSaveConfig" type="submit"
+                  class="w-full sm:w-auto bg-gradient-to-r from-sky-500 to-emerald-500 hover:from-sky-400 hover:to-emerald-400 text-white font-semibold rounded-xl px-6 py-3 transition-soft active:scale-[0.98] shadow-lg disabled:opacity-50 disabled:cursor-not-allowed">
+            Lưu cấu hình
+          </button>
+
+          <p id="configMsg" hidden class="mt-3 text-sm rounded-lg px-3 py-2"></p>
+        </form>
+
+        <div class="mt-4 pt-4 border-t border-white/10 text-xs text-slate-400 flex flex-wrap gap-x-6 gap-y-1">
+          <span>Cập nhật lần cuối: <span id="cfgLastUpdate" class="text-slate-300">—</span></span>
+          <span>Bởi: <span id="cfgUpdatedBy" class="text-slate-300">—</span></span>
+        </div>
+      </section>
+    </div>
+
+    <!-- Footer -->
+    <footer class="border-t border-white/10 mt-auto">
+      <div class="max-w-6xl mx-auto px-4 py-5 text-center text-sm text-slate-400">
+        <p class="font-semibold text-slate-300">Đồ án IoT — Smart Humidity IoT</p>
+        <p class="mt-1">Nhóm thực hiện: Phạm Trung Kiên (2591310) · Nguyễn Minh Tuấn (2591325) · Lê Phú Nhân (2591317) · Nguyễn Tuấn Nguyễn (2591316)</p>
+      </div>
+    </footer>
+  </div>
+
+  <!-- App entry (ESM) -->
+  <script type="module" src="./js/app.js"></script>
+</body>
+</html>

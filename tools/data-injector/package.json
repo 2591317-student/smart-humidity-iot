@@ -1,0 +1,13 @@
+{
+  "name": "data-injector",
+  "version": "1.0.0",
+  "description": "Bơm dữ liệu cảm biến giả lên Firebase Realtime Database để test web dashboard / chart mà không cần phần cứng",
+  "type": "module",
+  "main": "injector.js",
+  "scripts": {
+    "start": "node injector.js"
+  },
+  "dependencies": {
+    "firebase": "^10.12.2"
+  }
+}

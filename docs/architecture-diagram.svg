@@ -1,0 +1,93 @@
+<svg viewBox="0 0 980 470" xmlns="http://www.w3.org/2000/svg" role="img" font-family="system-ui, 'Segoe UI', Roboto, sans-serif">
+  <title>Kiến trúc hệ thống Smart Humidity IoT</title>
+  <desc>ESP2 đọc SHT30 gửi qua ESP-NOW tới ESP1; ESP1 chạy thuật toán Deadband điều khiển relay và đồng bộ Firebase; Web Dashboard dùng Google Auth và Chart.js; admin ghi cấu hình Hset/Deadband quay về ESP1 qua stream. Phía dưới là luồng cấu hình ban đầu: PWA quét QR và POST REST tới SoftAP của ESP.</desc>
+
+  <defs>
+    <marker id="ah" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+      <path d="M0,0 L7,3 L0,6 Z" fill="#2563eb"/>
+    </marker>
+    <marker id="ahn" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">
+      <path d="M0,0 L7,3 L0,6 Z" fill="#64748b"/>
+    </marker>
+  </defs>
+
+  <style>
+    .box  { fill: #f8fafc; stroke: #cbd5e1; stroke-width: 1.5; }
+    .t    { fill: #1f2937; font-weight: 700; font-size: 15px; }
+    .s    { fill: #64748b; font-size: 11.5px; }
+    .lbl  { fill: #2563eb; font-size: 11.5px; font-weight: 600; }
+    .lbls { fill: #64748b; font-size: 10.5px; }
+    .flow { stroke: #2563eb; stroke-width: 2; fill: none; }
+    .ctrl { stroke: #64748b; stroke-width: 1.6; fill: none; stroke-dasharray: 5 4; }
+    .sec  { fill: #1f2937; font-weight: 700; font-size: 12.5px; opacity: .8; }
+    .div  { stroke: #cbd5e1; stroke-width: 1; stroke-dasharray: 2 4; }
+  </style>
+
+  <rect x="0" y="0" width="980" height="470" fill="#ffffff"/>
+
+  <!-- Legend -->
+  <line x1="690" y1="28" x2="720" y2="28" class="flow" marker-end="url(#ah)"/>
+  <text x="726" y="32" class="lbls">luồng dữ liệu</text>
+  <line x1="838" y1="28" x2="868" y2="28" class="ctrl" marker-end="url(#ahn)"/>
+  <text x="874" y="32" class="lbls">điều khiển/cấu hình</text>
+
+  <!-- ===== ① RUNTIME ===== -->
+  <text x="40" y="32" class="sec">① Vận hành (Runtime)</text>
+
+  <rect class="box" x="40"  y="62" width="170" height="80" rx="10"/>
+  <text x="125" y="96"  text-anchor="middle" class="t">ESP2 — Sensor</text>
+  <text x="125" y="116" text-anchor="middle" class="s">SHT30 (I²C)</text>
+
+  <rect class="box" x="300" y="62" width="170" height="80" rx="10"/>
+  <text x="385" y="96"  text-anchor="middle" class="t">ESP1 — Main</text>
+  <text x="385" y="116" text-anchor="middle" class="s">Deadband → Relay</text>
+
+  <rect class="box" x="560" y="62" width="170" height="80" rx="10"/>
+  <text x="645" y="96"  text-anchor="middle" class="t">Firebase</text>
+  <text x="645" y="116" text-anchor="middle" class="s">RTDB · Auth · Rules</text>
+
+  <rect class="box" x="800" y="62" width="155" height="80" rx="10"/>
+  <text x="877" y="96"  text-anchor="middle" class="t">Web Dashboard</text>
+  <text x="877" y="116" text-anchor="middle" class="s">Google Auth · Chart.js</text>
+
+  <line x1="212" y1="102" x2="296" y2="102" class="flow" marker-end="url(#ah)"/>
+  <text x="254" y="90"  text-anchor="middle" class="lbl">ESP-NOW</text>
+  <text x="254" y="135" text-anchor="middle" class="lbls">nhiệt độ/độ ẩm</text>
+
+  <line x1="472" y1="102" x2="556" y2="102" class="flow" marker-end="url(#ah)"/>
+  <text x="514" y="90"  text-anchor="middle" class="lbl">WiFi/HTTPS</text>
+  <text x="514" y="135" text-anchor="middle" class="lbls">/sensor · /status</text>
+
+  <line x1="732" y1="102" x2="796" y2="102" class="flow" marker-end="url(#ah)"/>
+  <text x="764" y="90"  text-anchor="middle" class="lbl">onValue</text>
+
+  <!-- control loop (dashed): Web -> Firebase -> ESP1 -->
+  <path class="ctrl" d="M877,144 L877,190 L385,190 L385,146" marker-end="url(#ahn)"/>
+  <text x="631" y="183" text-anchor="middle" class="lbls">Admin ghi /config (Hset, Deadband) → ESP1 nhận qua stream → điều khiển relay phun sương</text>
+
+  <line x1="40" y1="232" x2="940" y2="232" class="div"/>
+
+  <!-- ===== ② PROVISIONING ===== -->
+  <text x="40" y="262" class="sec">② Cấu hình ban đầu (Provisioning)</text>
+
+  <rect class="box" x="60"  y="296" width="210" height="80" rx="10"/>
+  <text x="165" y="330" text-anchor="middle" class="t">📱 PWA Provisioning</text>
+  <text x="165" y="350" text-anchor="middle" class="s">quét QR thiết bị</text>
+
+  <rect class="box" x="390" y="296" width="200" height="80" rx="10"/>
+  <text x="490" y="330" text-anchor="middle" class="t">ESP — SoftAP</text>
+  <text x="490" y="350" text-anchor="middle" class="s">192.168.4.1 · /provision</text>
+
+  <rect class="box" x="710" y="296" width="210" height="80" rx="10"/>
+  <text x="815" y="330" text-anchor="middle" class="t">Lưu Flash → Reboot</text>
+  <text x="815" y="350" text-anchor="middle" class="s">Preferences → chế độ STA</text>
+
+  <line x1="272" y1="336" x2="386" y2="336" class="flow" marker-end="url(#ah)"/>
+  <text x="329" y="324" text-anchor="middle" class="lbl">REST POST</text>
+  <text x="329" y="368" text-anchor="middle" class="lbls">ssid · pass · peerMac</text>
+
+  <line x1="592" y1="336" x2="706" y2="336" class="flow" marker-end="url(#ah)"/>
+  <text x="649" y="324" text-anchor="middle" class="lbl">lưu cấu hình</text>
+
+  <text x="40" y="430" class="lbls">Bảo mật: người chưa đăng nhập bị chặn (.read=false) · chỉ Admin UID ghi /config · chỉ tài khoản thiết bị ghi /sensor, /status.</text>
+</svg>

@@ -1,0 +1,24 @@
+# PlatformIO
+.pio/
+firmware/.pio/
+
+# Node
+node_modules/
+tools/**/node_modules/
+
+# Firebase
+.firebase/
+firebase-debug.log*
+database-debug.log*
+*-debug.log
+
+# Secrets (không commit khoá thật)
+**/serviceAccountKey.json
+**/secrets.local.*
+tools/data-injector/config.js
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
