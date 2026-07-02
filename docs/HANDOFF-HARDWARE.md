@@ -91,6 +91,7 @@ cấu hình mạng qua app (giống thiết bị smart home):
 | ESP1 **không nhận** gói ESP-NOW | Kênh lệch. Kiểm Serial ESP2 có dòng `Da do thay router ... o kenh N` không; đảm bảo ESP2 được provisioning **đúng SSID router** mà ESP1 đang nối. Để 2 board gần nhau khi test. |
 | SHT30 `khong tim thay cam bien` | Sai dây I²C / địa chỉ (phải `0x44`) / cấp nhầm 5V. Kiểm SDA21–SCL22, nguồn 3V3, GND chung. |
 | Firebase `Ghi /sensor loi` / permission | Tài khoản thiết bị **chưa seed** vào `/devices/<UID>=true`, hoặc sai `HC_DEV_EMAIL`/`HC_DEV_PASS` (bước 2b) — kiểm lại và nạp lại (xem [SETUP.md](SETUP.md) mục 5). |
+| ESP **reboot liên tục / crash** khi gửi Firebase (`Stack canary loopTask` / `Guru Meditation`) | TLS của Firebase ngốn RAM+stack. Firmware repo đã có `SET_LOOP_TASK_STACK_SIZE(16*1024)` + gộp push 2 request. Nếu vẫn crash: xem log `freeHeap` — tụt gần 0 → cạn/vỡ heap do mở 2 kết nối TLS (stream `/config` + ghi) → đổi stream sang **poll `/config`**; hoặc nâng stack lên 24KB. |
 | Relay **ngược** (bật khi đáng tắt) | Module relay active-LOW → đặt `#define RELAY_ACTIVE_HIGH 0` trong `esp1_main/main.cpp` rồi nạp lại. |
 | WiFi không nối được | Sai SSID/mật khẩu → sửa `HC_WIFI_*` rồi nạp lại, **hoặc** giữ BOOT lúc khởi động để provisioning lại qua app (bước 5). |
 | Web báo **“Mất kết nối”** | Web suy từ `lastSeen`: quá ~15s không cập nhật → offline. Nghĩa là ESP1 ngừng đẩy (chưa nối WiFi/Firebase, hoặc treo/crash); xem Serial ESP1. Nếu ESP chưa đồng bộ NTP (`lastSeen=0`) cũng bị coi là offline. |

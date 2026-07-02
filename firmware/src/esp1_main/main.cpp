@@ -37,6 +37,15 @@
 #include "control.h"           // deadbandDecide() — thuật toán Deadband (tách ra để unit-test)
 
 // ============================================================================
+//  TĂNG STACK CHO loopTask — CHỐNG STACK OVERFLOW KHI GỬI FIREBASE (TLS).
+//  Firebase dùng HTTPS/TLS (mbedTLS) rất ngốn stack lúc bắt tay + mã hoá; stack
+//  mặc định của loopTask (8KB) thường KHÔNG đủ -> "Stack canary watchpoint
+//  triggered (loopTask)" / Guru Meditation. Nâng lên 16KB cho an toàn.
+//  (Macro của arduino-esp32, PHẢI đặt ở global scope. arduino-esp32 v2.0+.)
+// ============================================================================
+SET_LOOP_TASK_STACK_SIZE(16 * 1024);   // 16KB
+
+// ============================================================================
 //  CẤU HÌNH FIREBASE — ĐIỀN THEO PROJECT CỦA BẠN
 //  CONTRACT hiện CHƯA lưu api_key/database_url trong Preferences (mục 7), nên ta
 //  để dạng #define hằng số ở đây. Lấy từ Firebase Console:
@@ -443,9 +452,10 @@ void pushToFirebase() {
   if (!Firebase.RTDB.setJSON(&fbdo, "/status", &jsStatus)) {
     Serial.printf("[FB] Ghi /status loi: %s\n", fbdo.errorReason().c_str());
   } else {
-    Serial.printf("[FB] Da day (2 request): T=%.1f H=%.1f mist=%d tank=%s pump=%d ts=%lu\n",
+    // Kèm RAM còn trống để chẩn đoán: heap tụt dần/gần 0 -> cạn/vỡ heap (không phải tràn stack).
+    Serial.printf("[FB] Da day (2 request): T=%.1f H=%.1f mist=%d tank=%s pump=%d ts=%lu | freeHeap=%u\n",
                   g_latestTemp, g_latestHumi, g_mist, tank.c_str(), pump,
-                  (unsigned long)ts);
+                  (unsigned long)ts, (unsigned)ESP.getFreeHeap());
   }
 }
 
