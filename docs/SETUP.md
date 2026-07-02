@@ -30,8 +30,8 @@ node -v                           # cần Node.js cho tools/
 
 ### Tạo tài khoản thiết bị (cho ESP1 đăng nhập Firebase)
 - Tab **Users → Add user**:
-  - Email: `device@smart-humidity-iot.iot` (hoặc tuỳ ý)
-  - Password: đặt 1 mật khẩu mạnh, **ghi lại** (sẽ nạp vào ESP lúc provisioning).
+  - Email: `device@smarthumidity.iot` (hoặc tuỳ ý)
+  - Password: đặt 1 mật khẩu mạnh, **ghi lại** (điền vào `HC_DEV_EMAIL`/`HC_DEV_PASS` trong `firmware/src/esp1_main/main.cpp`).
 - Sau khi tạo, copy **User UID** của tài khoản này → sẽ seed vào `/devices` (mục 5).
 
 ## 3. Tạo Realtime Database
@@ -106,8 +106,9 @@ pio run -e esp2-sensor -t upload   # nạp ESP2
 pio run -e esp1-main   -t upload   # nạp ESP1
 pio device monitor                  # 115200
 ```
-Lần đầu boot: ESP phát WiFi `PROV-MAIN-xxxx` / `PROV-SENSOR-xxxx` → dùng PWA provisioning để nạp
-WiFi + cấu hình (xem `docs/CONTRACT.md` mục 5).
+ESP chạy ngay bằng WiFi hardcode (`HC_WIFI_*`) nếu chưa provisioning. Muốn cấu hình mạng qua app:
+**giữ nút BOOT lúc khởi động** → ESP phát WiFi `PROV-MAIN-xxxx` / `PROV-SENSOR-xxxx` → dùng PWA
+provisioning để nạp WiFi + MAC (xem `docs/CONTRACT.md` mục 5).
 
 ---
 

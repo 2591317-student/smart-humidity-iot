@@ -123,7 +123,7 @@ export async function startQrScan(onSuccess, onError) {
     if (String(err).toLowerCase().includes("permission") || String(err).toLowerCase().includes("notallowed")) {
       msg =
         "Trình duyệt từ chối quyền camera. Lưu ý: camera chỉ hoạt động trên HTTPS hoặc http://localhost. " +
-        "Nếu không quét được, hãy bấm 'Nhập tay' để nhập IP thủ công.";
+        "Nếu không quét được, hãy gõ MAC của ESP còn lại bằng tay vào ô MAC.";
     }
     onError && onError(msg);
   }

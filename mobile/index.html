@@ -68,214 +68,151 @@
         class="hidden bg-amber-50 border border-amber-300 text-amber-800 rounded-xl p-3 text-sm leading-relaxed"
       ></div>
 
-      <!-- ============== BƯỚC 1: QUÉT QR ============== -->
+      <!-- ============== HƯỚNG DẪN NGẮN ============== -->
       <section class="bg-white rounded-2xl shadow-sm p-4">
-        <div class="flex items-center gap-2 mb-2">
-          <span class="bg-sky-100 text-sky-700 w-6 h-6 rounded-full flex items-center justify-center text-sm font-bold">1</span>
-          <h2 class="font-semibold">Quét mã QR trên thiết bị</h2>
-        </div>
-        <p class="text-sm text-slate-500 mb-3">
-          Hướng camera vào mã QR dán trên ESP để lấy thông tin (AP, IP, MAC). Không có QR? Bấm
-          <span class="font-medium">Nhập tay</span>.
-        </p>
-
-        <!-- Vùng camera -->
-        <div id="qr-reader" class="hidden w-full mb-3 bg-black"></div>
-
-        <div class="flex gap-2">
-          <button
-            id="btn-scan"
-            class="flex-1 bg-sky-600 hover:bg-sky-700 active:bg-sky-800 text-white font-medium rounded-xl py-2.5 transition"
-          >
-            Quét QR
-          </button>
-          <button
-            id="btn-stop-scan"
-            class="hidden flex-1 bg-slate-200 hover:bg-slate-300 text-slate-700 font-medium rounded-xl py-2.5 transition"
-          >
-            Dừng quét
-          </button>
-          <button
-            id="btn-manual"
-            class="bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-medium rounded-xl py-2.5 px-4 transition"
-          >
-            Nhập tay
-          </button>
-        </div>
-
-        <p id="scan-status" class="hidden text-sm mt-2 text-slate-500"></p>
-        <p
-          id="device-info"
-          class="hidden text-xs mt-2 bg-slate-50 border border-slate-200 rounded-lg p-2 text-slate-600 break-words"
-        ></p>
+        <h2 class="font-semibold mb-2">Cách cấu hình (3 bước)</h2>
+        <ol class="text-sm text-slate-600 leading-relaxed list-decimal list-inside space-y-1">
+          <li>Giữ nút <span class="font-medium">BOOT</span> trên ESP rồi cấp nguồn → ESP phát WiFi tên
+            <span class="font-mono">PROV-MAIN-…</span> / <span class="font-mono">PROV-SENSOR-…</span>.</li>
+          <li>Trên điện thoại vào <span class="font-medium">Cài đặt → WiFi</span>, kết nối vào mạng đó
+            (mật khẩu nếu có: <span class="font-mono">12345678</span>). Có thể tạm mất Internet — bình thường.</li>
+          <li>Điền form dưới đây rồi bấm <span class="font-medium">Gửi cấu hình</span>. ESP sẽ tự khởi động
+            lại và vào mạng nhà.</li>
+        </ol>
       </section>
 
-      <!-- ============== BƯỚC 2: KẾT NỐI AP ============== -->
-      <section id="connect-card" class="hidden bg-white rounded-2xl shadow-sm p-4">
-        <div class="flex items-center gap-2 mb-2">
-          <span class="bg-sky-100 text-sky-700 w-6 h-6 rounded-full flex items-center justify-center text-sm font-bold">2</span>
-          <h2 class="font-semibold">Kết nối WiFi của thiết bị</h2>
-        </div>
-        <p class="text-sm text-slate-600 leading-relaxed">
-          Trên điện thoại, vào <span class="font-medium">Cài đặt → WiFi</span> và kết nối tới mạng phát
-          ra từ ESP:
-        </p>
-        <div class="mt-2 bg-sky-50 border border-sky-200 rounded-lg p-3 text-center">
-          <span class="text-xs text-sky-700 block">Tên WiFi (AP) của thiết bị</span>
-          <span id="ap-name" class="font-mono font-semibold text-sky-800 break-all">PROV-…</span>
-        </div>
-        <p class="text-xs text-slate-500 mt-2">
-          Mật khẩu AP (nếu có): <span class="font-mono">12345678</span>. Sau khi nối xong, quay lại
-          trang này và điền form bên dưới. Lưu ý: khi nối vào AP của ESP, điện thoại có thể tạm mất
-          mạng Internet — điều này bình thường.
-        </p>
-      </section>
-
-      <!-- ============== BƯỚC 3: FORM CẤU HÌNH ============== -->
-      <section id="form-card" class="hidden bg-white rounded-2xl shadow-sm p-4">
-        <div class="flex items-center gap-2 mb-3">
-          <span class="bg-sky-100 text-sky-700 w-6 h-6 rounded-full flex items-center justify-center text-sm font-bold">3</span>
-          <h2 class="font-semibold">Nhập cấu hình</h2>
-        </div>
+      <!-- ============== FORM CẤU HÌNH ============== -->
+      <section id="form-card" class="bg-white rounded-2xl shadow-sm p-4">
+        <h2 class="font-semibold mb-3">Cấu hình mạng cho thiết bị</h2>
 
         <form id="prov-form" class="space-y-3" novalidate>
-          <!-- Vai trò -->
-          <div>
-            <label class="block text-sm font-medium mb-1" for="role">Vai trò thiết bị</label>
-            <select
-              id="role"
-              class="w-full border border-slate-300 rounded-xl px-3 py-2.5 bg-white focus:ring-2 focus:ring-sky-400 focus:border-sky-400 outline-none"
-            >
-              <option value="main">main — ESP1 (kết nối WiFi/Firebase)</option>
-              <option value="sensor">sensor — ESP2 (cảm biến)</option>
-            </select>
+          <p class="text-xs text-slate-500 -mt-1">
+            Tick mục nào thì <span class="font-medium">chỉ gửi mục đó</span> — cho phép cập nhật riêng
+            WiFi hoặc riêng MAC mà không đụng phần còn lại đã lưu trong ESP.
+          </p>
+
+          <!-- ===== Nhóm WiFi (có tick chọn gửi) ===== -->
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input id="send-wifi" type="checkbox" class="w-4 h-4 accent-sky-600" checked />
+            <span class="text-sm font-semibold">Gửi cấu hình WiFi</span>
+          </label>
+          <div id="wifi-fields" class="space-y-3 pl-6">
+            <div>
+              <label class="block text-sm font-medium mb-1" for="wifi-ssid">Tên WiFi nhà (SSID) <span class="text-red-500">*</span></label>
+              <input
+                id="wifi-ssid"
+                type="text"
+                autocomplete="off"
+                placeholder="VD: WiFi_PhongKhach"
+                class="w-full border border-slate-300 rounded-xl px-3 py-2.5 focus:ring-2 focus:ring-sky-400 focus:border-sky-400 outline-none"
+              />
+            </div>
+            <div>
+              <label class="block text-sm font-medium mb-1" for="wifi-pass">Mật khẩu WiFi</label>
+              <div class="flex gap-2">
+                <input
+                  id="wifi-pass"
+                  type="password"
+                  autocomplete="off"
+                  placeholder="Mật khẩu WiFi nhà"
+                  class="flex-1 border border-slate-300 rounded-xl px-3 py-2.5 focus:ring-2 focus:ring-sky-400 focus:border-sky-400 outline-none"
+                />
+                <button
+                  type="button"
+                  id="toggle-pass"
+                  class="border border-slate-300 rounded-xl px-3 text-sm text-slate-600 hover:bg-slate-50"
+                >
+                  Hiện
+                </button>
+              </div>
+            </div>
           </div>
 
-          <!-- IP thiết bị -->
-          <div>
-            <label class="block text-sm font-medium mb-1" for="ip">Địa chỉ IP của ESP</label>
-            <input
-              id="ip"
-              type="text"
-              inputmode="decimal"
-              placeholder="192.168.4.1"
-              class="w-full border border-slate-300 rounded-xl px-3 py-2.5 focus:ring-2 focus:ring-sky-400 focus:border-sky-400 outline-none"
-            />
-            <p class="text-xs text-slate-400 mt-1">Mặc định 192.168.4.1 (SoftAP). Sẽ bị bỏ qua khi bật Chế độ Test.</p>
-          </div>
-
-          <hr class="border-slate-100" />
-
-          <!-- WiFi -->
-          <div>
-            <label class="block text-sm font-medium mb-1" for="wifi-ssid">Tên WiFi nhà (SSID) <span class="text-red-500">*</span></label>
-            <input
-              id="wifi-ssid"
-              type="text"
-              autocomplete="off"
-              placeholder="VD: WiFi_PhongKhach"
-              class="w-full border border-slate-300 rounded-xl px-3 py-2.5 focus:ring-2 focus:ring-sky-400 focus:border-sky-400 outline-none"
-            />
-          </div>
-          <div>
-            <label class="block text-sm font-medium mb-1" for="wifi-pass">Mật khẩu WiFi</label>
+          <!-- ===== Nhóm MAC (có tick chọn gửi) ===== -->
+          <label class="flex items-center gap-2 cursor-pointer">
+            <input id="send-mac" type="checkbox" class="w-4 h-4 accent-sky-600" checked />
+            <span class="text-sm font-semibold">Gửi MAC của ESP còn lại</span>
+          </label>
+          <div id="mac-fields" class="pl-6">
             <div class="flex gap-2">
               <input
-                id="wifi-pass"
-                type="password"
-                autocomplete="off"
-                placeholder="Mật khẩu WiFi nhà"
-                class="flex-1 border border-slate-300 rounded-xl px-3 py-2.5 focus:ring-2 focus:ring-sky-400 focus:border-sky-400 outline-none"
+                id="peer-mac"
+                type="text"
+                placeholder="11:22:33:44:55:66"
+                class="flex-1 border border-slate-300 rounded-xl px-3 py-2.5 font-mono focus:ring-2 focus:ring-sky-400 focus:border-sky-400 outline-none"
               />
               <button
                 type="button"
-                id="toggle-pass"
-                class="border border-slate-300 rounded-xl px-3 text-sm text-slate-600 hover:bg-slate-50"
+                id="btn-scan"
+                class="bg-sky-600 hover:bg-sky-700 active:bg-sky-800 text-white text-sm font-medium rounded-xl px-3 transition whitespace-nowrap"
               >
-                Hiện
+                Quét QR
+              </button>
+              <button
+                type="button"
+                id="btn-stop-scan"
+                class="hidden bg-slate-200 hover:bg-slate-300 text-slate-700 text-sm font-medium rounded-xl px-3 transition whitespace-nowrap"
+              >
+                Dừng
               </button>
             </div>
-          </div>
-
-          <!-- Tài khoản thiết bị (chỉ role main) -->
-          <div id="device-account-fields" class="space-y-3">
-            <hr class="border-slate-100" />
-            <p class="text-xs text-slate-500">
-              Tài khoản thiết bị để ESP1 đăng nhập Firebase (tạo sẵn trong Firebase Auth — xem
-              docs/SETUP.md).
+            <p class="text-xs text-slate-400 mt-1">
+              Nhập MAC của ESP kia, hoặc bấm <span class="font-medium">Quét QR</span> in trên thiết bị đó
+              để điền nhanh. Để trống cũng được (ESP-NOW vẫn nhận broadcast).
             </p>
-            <div>
-              <label class="block text-sm font-medium mb-1" for="device-email">Email tài khoản thiết bị <span class="text-red-500">*</span></label>
-              <input
-                id="device-email"
-                type="email"
-                autocomplete="off"
-                placeholder="device@project.iot"
-                class="w-full border border-slate-300 rounded-xl px-3 py-2.5 focus:ring-2 focus:ring-sky-400 focus:border-sky-400 outline-none"
-              />
-            </div>
-            <div>
-              <label class="block text-sm font-medium mb-1" for="device-pass">Mật khẩu tài khoản thiết bị <span class="text-red-500">*</span></label>
-              <input
-                id="device-pass"
-                type="password"
-                autocomplete="off"
-                placeholder="••••••••"
-                class="w-full border border-slate-300 rounded-xl px-3 py-2.5 focus:ring-2 focus:ring-sky-400 focus:border-sky-400 outline-none"
-              />
-            </div>
+            <div id="qr-reader" class="hidden w-full mt-2 bg-black rounded-xl"></div>
+            <p id="scan-status" class="hidden text-sm mt-2 text-slate-500"></p>
           </div>
 
-          <!-- peerMac (chỉ role main) -->
-          <div id="peer-mac-wrap">
-            <label class="block text-sm font-medium mb-1" for="peer-mac">MAC của ESP2 (peerMac)</label>
-            <input
-              id="peer-mac"
-              type="text"
-              placeholder="11:22:33:44:55:66"
-              class="w-full border border-slate-300 rounded-xl px-3 py-2.5 font-mono focus:ring-2 focus:ring-sky-400 focus:border-sky-400 outline-none"
-            />
-            <p class="text-xs text-slate-400 mt-1">Tự điền từ QR (sửa được). ESP1 dùng để bắt cặp ESP-NOW.</p>
+          <!-- ===== Chẩn đoán kết nối (diag) ===== -->
+          <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2">
+            <div class="flex items-center justify-between gap-2">
+              <span class="text-sm font-medium">Chẩn đoán kết nối</span>
+              <span id="net-status" class="text-xs px-2 py-0.5 rounded-full bg-slate-200 text-slate-600">…</span>
+            </div>
+            <button
+              type="button"
+              id="btn-test-info"
+              class="w-full bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-sm font-medium rounded-xl py-2 transition"
+            >
+              Kiểm tra kết nối tới ESP (GET /info)
+            </button>
+            <pre
+              id="info-result"
+              class="hidden bg-slate-900 text-emerald-300 text-xs rounded-lg p-3 overflow-x-auto whitespace-pre-wrap break-words"
+            ></pre>
+            <p class="text-[11px] text-slate-400 leading-snug">
+              Lưu ý: trình duyệt không đọc được tên WiFi / IP của điện thoại (giới hạn bảo mật web).
+              Nút này gọi <span class="font-mono">/info</span> để xác nhận điện thoại có tới được ESP không
+              và ESP báo về danh tính (role, MAC, đã cấu hình chưa).
+            </p>
           </div>
 
-          <hr class="border-slate-100" />
-
-          <!-- hset & deadband -->
-          <div class="grid grid-cols-2 gap-3">
-            <div>
-              <label class="block text-sm font-medium mb-1" for="hset">Hₛₑₜ (%RH)</label>
-              <input
-                id="hset"
-                type="number"
-                min="0"
-                max="100"
-                step="1"
-                value="70"
-                class="w-full border border-slate-300 rounded-xl px-3 py-2.5 focus:ring-2 focus:ring-sky-400 focus:border-sky-400 outline-none"
-              />
+          <!-- Tuỳ chọn nâng cao: IP + Chế độ Test -->
+          <details class="bg-slate-50 border border-slate-200 rounded-xl p-3">
+            <summary class="text-sm font-medium cursor-pointer">Tuỳ chọn nâng cao</summary>
+            <div class="mt-3 space-y-3">
+              <div>
+                <label class="block text-sm font-medium mb-1" for="ip">Địa chỉ IP của ESP</label>
+                <input
+                  id="ip"
+                  type="text"
+                  inputmode="decimal"
+                  placeholder="192.168.4.1"
+                  value="192.168.4.1"
+                  class="w-full border border-slate-300 rounded-xl px-3 py-2.5 focus:ring-2 focus:ring-sky-400 focus:border-sky-400 outline-none"
+                />
+                <p class="text-xs text-slate-400 mt-1">Mặc định 192.168.4.1 (SoftAP). Bỏ qua khi bật Chế độ Test.</p>
+              </div>
+              <label class="flex items-center gap-2 cursor-pointer">
+                <input id="test-mode" type="checkbox" class="w-4 h-4 accent-sky-600" />
+                <span class="text-sm">
+                  <span class="font-medium">Chế độ Test</span> — gửi tới mock-esp-server
+                  (<span class="font-mono">http://localhost:8080</span>), thử không cần phần cứng.
+                </span>
+              </label>
             </div>
-            <div>
-              <label class="block text-sm font-medium mb-1" for="deadband">Deadband (±)</label>
-              <input
-                id="deadband"
-                type="number"
-                min="0"
-                max="50"
-                step="1"
-                value="5"
-                class="w-full border border-slate-300 rounded-xl px-3 py-2.5 focus:ring-2 focus:ring-sky-400 focus:border-sky-400 outline-none"
-              />
-            </div>
-          </div>
-
-          <!-- Chế độ Test -->
-          <label class="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl p-3 cursor-pointer">
-            <input id="test-mode" type="checkbox" class="w-4 h-4 accent-sky-600" />
-            <span class="text-sm">
-              <span class="font-medium">Chế độ Test</span> — gửi tới mock-esp-server
-              (<span class="font-mono">http://localhost:8080</span>) để thử không cần phần cứng.
-            </span>
-          </label>
+          </details>
 
           <!-- Preview URL đích -->
           <p class="text-xs text-slate-500">

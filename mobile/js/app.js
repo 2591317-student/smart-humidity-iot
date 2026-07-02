@@ -1,14 +1,23 @@
 // ============================================================================
-//  app.js — Logic chính của PWA Provisioning.
-//  Luồng (theo CONTRACT mục 5 & 6):
-//    1. Quét QR (qr.js) → {id, role, ap, ip, mac}; hoặc nhập tay IP.
-//    2. Hướng dẫn nối WiFi vào AP của ESP.
-//    3. Điền form (SSID, password, deviceEmail/Password cho role main, peerMac, hset, deadband).
-//    4. POST JSON → http://<ip>/provision  → hiển thị response.
-//    5. Toggle "Chế độ Test" → POST tới http://localhost:8080 (mock-esp-server).
-//    6. Bắt lỗi fetch/CORS + cảnh báo mixed-content.
+//  app.js — Logic chính của PWA Provisioning (bản GỌN).
 //
-//  Provisioning KHÔNG bắt buộc đăng nhập Firebase → không import firebase-config ở đây.
+//  Vai trò của app (đúng chuẩn ngành IoT — như cấu hình camera WiFi):
+//    App chỉ làm 1 việc: gửi CẤU HÌNH MẠNG cho ESP đang phát SoftAP.
+//    Người dùng chỉ cần nhập: WiFi SSID + password + MAC của ESP còn lại.
+//
+//  Luồng sử dụng:
+//    1. Giữ nút BOOT trên ESP lúc cấp nguồn -> ESP phát AP "PROV-...".
+//    2. Điện thoại kết nối vào AP đó (chung mạng với ESP).
+//    3. Mở app -> nhập WiFi + MAC (bấm "Quét QR" để điền MAC nhanh, hoặc gõ tay).
+//    4. POST JSON {ssid, password, peerMac} -> http://192.168.4.1/provision.
+//    5. ESP lưu Preferences -> reboot -> nối WiFi nhà -> online.
+//
+//  Tài khoản Firebase của thiết bị và hset/deadband KHÔNG còn hỏi ở đây:
+//    - devEmail/devPass: hardcode trong firmware (xem esp1_main/main.cpp).
+//    - hset/deadband: dùng mặc định firmware, admin chỉnh sau qua web dashboard.
+//
+//  QR (CONTRACT mục 6) giờ chỉ là TIỆN ÍCH lấy MAC: quét QR in trên ESP kia để
+//  điền sẵn ô "MAC của ESP còn lại". Nhập tay vẫn dùng được bình thường.
 // ============================================================================
 
 import { startQrScan, stopQrScan, isQrScanning } from "./qr.js";
@@ -18,83 +27,50 @@ import { startQrScan, stopQrScan, isQrScanning } from "./qr.js";
 // ---------------------------------------------------------------------------
 const DEFAULT_IP = "192.168.4.1"; // IP SoftAP mặc định của ESP (CONTRACT mục 5)
 const MOCK_BASE = "http://localhost:8080"; // mock-esp-server khi chạy "Chế độ Test"
-const DEFAULT_HSET = 70; // mặc định an toàn (CONTRACT mục 10)
-const DEFAULT_DEADBAND = 5;
-
-// State quét được từ QR (nếu có). Mặc định coi như role main để hiện đủ field.
-const state = {
-  device: {
-    id: "",
-    role: "main",
-    ap: "",
-    ip: DEFAULT_IP,
-    mac: "",
-  },
-  scannedByQr: false,
-};
 
 // ---------------------------------------------------------------------------
 // Tiện ích DOM
 // ---------------------------------------------------------------------------
 const $ = (sel) => document.querySelector(sel);
-
-function show(el) {
-  if (el) el.classList.remove("hidden");
-}
-function hide(el) {
-  if (el) el.classList.add("hidden");
-}
-
-// Kẹp số nguyên về [min,max]; nếu không hợp lệ trả về mặc định.
-function clampInt(v, min, max, def) {
-  return Number.isFinite(v) ? Math.min(max, Math.max(min, v)) : def;
-}
+const show = (el) => el && el.classList.remove("hidden");
+const hide = (el) => el && el.classList.add("hidden");
 
 // ---------------------------------------------------------------------------
 // Khởi tạo sau khi DOM sẵn sàng
 // ---------------------------------------------------------------------------
 document.addEventListener("DOMContentLoaded", () => {
   bindEvents();
-  applyDeviceToUI(); // áp state mặc định lên form
+  updateTargetPreview();
+  applySendToggles(); // bật/mờ nhóm WiFi/MAC theo checkbox
+  updateNetStatus(); // trạng thái online/offline của trình duyệt
   detectMixedContentRisk(); // cảnh báo sớm nếu PWA đang chạy HTTPS
   registerServiceWorker();
 });
 
 function bindEvents() {
-  // --- Quét QR ---
+  // --- Quét QR để điền MAC ---
   $("#btn-scan").addEventListener("click", onClickScan);
-  $("#btn-stop-scan").addEventListener("click", () => {
-    stopQrScan();
-    hide($("#qr-reader"));
-    hide($("#btn-stop-scan"));
-    show($("#btn-scan"));
-    setScanStatus("Đã dừng quét.", "muted");
-  });
+  $("#btn-stop-scan").addEventListener("click", stopScanning);
 
-  // --- Nhập tay (bỏ qua QR) ---
-  $("#btn-manual").addEventListener("click", () => {
-    state.scannedByQr = false;
-    // Giữ nguyên giá trị đang có; mở phần form và cho sửa role.
-    revealForm();
-    setDeviceInfoText("Chế độ nhập tay — hãy điền IP của ESP (mặc định 192.168.4.1).");
-  });
+  // --- Checkbox chọn phần cần gửi (WiFi / MAC) ---
+  $("#send-wifi").addEventListener("change", applySendToggles);
+  $("#send-mac").addEventListener("change", applySendToggles);
 
-  // --- Đổi role thủ công (hiện/ẩn field tài khoản thiết bị) ---
-  $("#role").addEventListener("change", (e) => {
-    state.device.role = e.target.value;
-    toggleRoleFields();
-  });
-
-  // --- Đồng bộ ip nhập tay vào state ---
-  $("#ip").addEventListener("input", (e) => {
-    state.device.ip = e.target.value.trim() || DEFAULT_IP;
-  });
+  // --- Nút chẩn đoán: gọi GET /info của ESP ---
+  $("#btn-test-info").addEventListener("click", testDeviceInfo);
 
   // --- Toggle Chế độ Test (mock server) ---
   $("#test-mode").addEventListener("change", () => {
     updateTargetPreview();
     detectMixedContentRisk();
   });
+
+  // --- Đồng bộ IP nhập tay vào preview ---
+  $("#ip").addEventListener("input", updateTargetPreview);
+
+  // --- Trạng thái online/offline của trình duyệt ---
+  window.addEventListener("online", updateNetStatus);
+  window.addEventListener("offline", updateNetStatus);
 
   // --- Hiển thị/ẩn mật khẩu WiFi ---
   $("#toggle-pass").addEventListener("click", () => {
@@ -114,111 +90,45 @@ function bindEvents() {
 }
 
 // ---------------------------------------------------------------------------
-// QR
+// QR — quét để điền MAC của ESP còn lại
 // ---------------------------------------------------------------------------
 function onClickScan() {
   if (isQrScanning()) return;
   show($("#qr-reader"));
   hide($("#btn-scan"));
   show($("#btn-stop-scan"));
-  setScanStatus("Đang mở camera… hướng vào mã QR trên thiết bị.", "muted");
+  setScanStatus("Đang mở camera… hướng vào mã QR in trên ESP kia.", "muted");
 
   startQrScan(
     (data) => {
-      // Quét thành công → lưu state, đóng UI camera, mở form.
-      state.device = {
-        id: data.id || "",
-        role: data.role || "main",
-        ap: data.ap || "",
-        ip: data.ip || DEFAULT_IP,
-        mac: data.mac || "",
-      };
-      state.scannedByQr = true;
-
-      hide($("#qr-reader"));
-      hide($("#btn-stop-scan"));
-      show($("#btn-scan"));
-
-      applyDeviceToUI();
-      revealForm();
-      setScanStatus("Quét QR thành công.", "ok");
-      setDeviceInfoText(buildDeviceInfoText(state.device));
+      // Quét thành công: chỉ lấy MAC điền vào ô peerMac (bỏ qua các field khác của QR).
+      const mac = (data.mac || "").toUpperCase();
+      resetScanButtons();
+      if (mac) {
+        $("#peer-mac").value = mac;
+        setScanStatus("Đã điền MAC: " + mac, "ok");
+      } else {
+        setScanStatus("QR không chứa MAC — vui lòng nhập tay.", "err");
+      }
     },
     (errMsg) => {
       setScanStatus(errMsg, "err");
-      stopQrScan();   // nhả camera + đặt isScanning=false (đồng bộ state scanner)
-      // Mở lại nút quét để thử lại; nếu là lỗi camera, gợi ý nhập tay.
-      hide($("#qr-reader"));
-      hide($("#btn-stop-scan"));
-      show($("#btn-scan"));
+      stopQrScan(); // nhả camera + đồng bộ state scanner
+      resetScanButtons();
     }
   );
 }
 
-function buildDeviceInfoText(d) {
-  const parts = [];
-  if (d.id) parts.push("ID: " + d.id);
-  parts.push("Vai trò: " + (d.role === "main" ? "main (ESP1)" : "sensor (ESP2)"));
-  if (d.ap) parts.push("AP: " + d.ap);
-  parts.push("IP: " + d.ip);
-  if (d.mac) parts.push("MAC: " + d.mac);
-  return parts.join(" · ");
+function stopScanning() {
+  stopQrScan();
+  resetScanButtons();
+  setScanStatus("Đã dừng quét.", "muted");
 }
 
-// ---------------------------------------------------------------------------
-// Áp state lên các field của form
-// ---------------------------------------------------------------------------
-function applyDeviceToUI() {
-  $("#role").value = state.device.role;
-  $("#ip").value = state.device.ip || DEFAULT_IP;
-  // peerMac = MAC của ESP CÒN LẠI (ESP1 cần MAC của ESP2). KHÔNG tự điền bằng MAC quét
-  // được, vì QR quét chính là thiết bị đang cấu hình (MAC của chính nó, không phải peer).
-  // Để trống cho người dùng nhập MAC ESP2 (xem docs/DEMO.md); state.device.mac chỉ dùng
-  // để HIỂN THỊ thông tin thiết bị, không auto-fill vào peerMac.
-  // AP gợi ý ở phần hướng dẫn kết nối.
-  const apName = state.device.ap || "PROV-… (xem nhãn trên thiết bị)";
-  $("#ap-name").textContent = apName;
-
-  // Mặc định hset/deadband nếu trống.
-  if (!$("#hset").value) $("#hset").value = DEFAULT_HSET;
-  if (!$("#deadband").value) $("#deadband").value = DEFAULT_DEADBAND;
-
-  toggleRoleFields();
-  updateTargetPreview();
-}
-
-// Field tài khoản thiết bị (deviceEmail/devicePassword) chỉ cần cho role main (ESP1).
-function toggleRoleFields() {
-  const isMain = $("#role").value === "main";
-  const deviceFields = $("#device-account-fields");
-  const peerWrap = $("#peer-mac-wrap");
-  if (isMain) {
-    show(deviceFields);
-    show(peerWrap); // ESP1 cần MAC của ESP2 để add peer
-    $("#device-email").required = true;
-    $("#device-pass").required = true;
-  } else {
-    hide(deviceFields);
-    hide(peerWrap);
-    $("#device-email").required = false;
-    $("#device-pass").required = false;
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Mở phần hướng dẫn + form
-// ---------------------------------------------------------------------------
-function revealForm() {
-  show($("#connect-card"));
-  show($("#form-card"));
-  applyDeviceToUI();
-  // Cuộn xuống form cho dễ thao tác trên mobile.
-  $("#connect-card").scrollIntoView({ behavior: "smooth", block: "start" });
-}
-
-function setDeviceInfoText(text) {
-  $("#device-info").textContent = text;
-  show($("#device-info"));
+function resetScanButtons() {
+  hide($("#qr-reader"));
+  hide($("#btn-stop-scan"));
+  show($("#btn-scan"));
 }
 
 function setScanStatus(msg, kind) {
@@ -244,8 +154,78 @@ function getTargetBase() {
 }
 
 function updateTargetPreview() {
-  const base = getTargetBase();
-  $("#target-url").textContent = base + "/provision";
+  $("#target-url").textContent = getTargetBase() + "/provision";
+}
+
+// ---------------------------------------------------------------------------
+// Checkbox chọn phần cần gửi: làm mờ + khoá nhóm khi bỏ tick (chỉ để rõ ràng;
+// việc gửi hay không do onSubmitProvision quyết theo trạng thái checkbox).
+// ---------------------------------------------------------------------------
+function applySendToggles() {
+  const wifiOn = $("#send-wifi").checked;
+  const macOn = $("#send-mac").checked;
+  toggleGroup($("#wifi-fields"), wifiOn);
+  toggleGroup($("#mac-fields"), macOn);
+}
+
+function toggleGroup(group, enabled) {
+  if (!group) return;
+  group.classList.toggle("opacity-40", !enabled);
+  group.classList.toggle("pointer-events-none", !enabled);
+  group.querySelectorAll("input, button").forEach((el) => {
+    el.disabled = !enabled;
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Trạng thái mạng của trình duyệt (online/offline). Trình duyệt KHÔNG cho biết
+// tên WiFi hay IP nội bộ của điện thoại — chỉ có online/offline.
+// ---------------------------------------------------------------------------
+function updateNetStatus() {
+  const el = $("#net-status");
+  if (!el) return;
+  const online = navigator.onLine;
+  el.textContent = online ? "Trình duyệt: online" : "Trình duyệt: offline";
+  el.className =
+    "text-xs px-2 py-0.5 rounded-full " +
+    (online ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-600");
+}
+
+// ---------------------------------------------------------------------------
+// Chẩn đoán: gọi GET /info của ESP → xác nhận tới được thiết bị + hiện danh tính.
+// ---------------------------------------------------------------------------
+async function testDeviceInfo() {
+  const btn = $("#btn-test-info");
+  const out = $("#info-result");
+  const url = getTargetBase() + "/info";
+  const oldLabel = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "Đang kiểm tra…";
+  try {
+    const resp = await fetch(url, { method: "GET" });
+    const text = await resp.text();
+    let pretty = text;
+    try {
+      pretty = JSON.stringify(JSON.parse(text), null, 2);
+    } catch (_) {}
+    out.textContent = "✓ Tới được " + url + "\n\n" + pretty;
+    out.className =
+      "bg-slate-900 text-emerald-300 text-xs rounded-lg p-3 overflow-x-auto whitespace-pre-wrap break-words";
+    show(out);
+  } catch (err) {
+    const isHttps = location.protocol === "https:";
+    out.textContent =
+      "✕ Không tới được " + url + "\nLỗi: " + (err && err.message ? err.message : err) +
+      (isHttps
+        ? "\n\nCó thể do mixed-content (trang HTTPS gọi http://). Mở app qua http://."
+        : "\n\nKiểm tra: điện thoại đã nối AP của ESP chưa? IP đúng chưa? (mặc định 192.168.4.1)");
+    out.className =
+      "bg-slate-900 text-red-300 text-xs rounded-lg p-3 overflow-x-auto whitespace-pre-wrap break-words";
+    show(out);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = oldLabel;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -255,11 +235,7 @@ function updateTargetPreview() {
 function detectMixedContentRisk() {
   const banner = $("#mixed-content-warning");
   const isHttps = location.protocol === "https:";
-  const testMode = $("#test-mode").checked;
 
-  // Nếu trang đang HTTPS mà POST sang http:// (kể cả localhost mock) → cảnh báo.
-  // Lưu ý: localhost được nhiều trình duyệt coi là "secure context" nhưng nội dung
-  // vẫn là http → vẫn có thể bị chặn mixed-content active. Cảnh báo cho chắc.
   if (isHttps) {
     banner.innerHTML =
       "<strong>Cảnh báo Mixed-content:</strong> Trang này đang chạy qua <code>https://</code> " +
@@ -268,10 +244,7 @@ function detectMixedContentRisk() {
       "<code>http://localhost:5500</code> hoặc IP máy bạn), HOẶC <br>" +
       "• Dùng trang form do chính ESP phục vụ (<code>GET http://" +
       DEFAULT_IP +
-      "/</code>) — same-origin nên luôn chạy." +
-      (testMode
-        ? "<br>• (Chế độ Test cũng cần mở trang qua http:// để gọi được localhost:8080.)"
-        : "");
+      "/</code>) — same-origin nên luôn chạy.";
     show(banner);
   } else {
     hide(banner);
@@ -284,43 +257,29 @@ function detectMixedContentRisk() {
 async function onSubmitProvision(ev) {
   ev.preventDefault();
 
-  const role = $("#role").value;
+  const sendWifi = $("#send-wifi").checked;
+  const sendMac = $("#send-mac").checked;
   const ssid = $("#wifi-ssid").value.trim();
   const password = $("#wifi-pass").value; // không trim — mật khẩu có thể có khoảng trắng
-  const deviceEmail = $("#device-email").value.trim();
-  const devicePassword = $("#device-pass").value;
   const peerMac = $("#peer-mac").value.trim();
-  const hset = parseInt($("#hset").value, 10);
-  const deadband = parseInt($("#deadband").value, 10);
 
   // --- Kiểm tra đầu vào ---
-  if (!ssid) {
-    return showResult(false, "Thiếu thông tin", "Vui lòng nhập tên WiFi (SSID).");
+  if (!sendWifi && !sendMac) {
+    return showResult(false, "Chưa chọn mục nào", "Hãy tick ít nhất một mục (WiFi hoặc MAC) để gửi.");
   }
-  if (role === "main" && (!deviceEmail || !devicePassword)) {
-    return showResult(
-      false,
-      "Thiếu thông tin",
-      "Thiết bị main (ESP1) cần tài khoản thiết bị (email + mật khẩu) để đăng nhập Firebase."
-    );
+  if (sendWifi && !ssid) {
+    return showResult(false, "Thiếu thông tin", "Đã tick gửi WiFi — vui lòng nhập tên WiFi (SSID).");
   }
 
-  // --- Dựng payload đúng schema CONTRACT mục 5 ---
-  const payload = {
-    ssid: ssid,
-    password: password,
-    hset: clampInt(hset, 0, 100, DEFAULT_HSET),
-    deadband: clampInt(deadband, 0, 50, DEFAULT_DEADBAND),
-  };
-  // Tài khoản thiết bị + peerMac chỉ gửi cho role main (ESP1).
-  if (role === "main") {
-    payload.deviceEmail = deviceEmail;
-    payload.devicePassword = devicePassword;
-    if (peerMac) payload.peerMac = peerMac;
+  // --- Dựng payload theo tick: chỉ gửi mục được chọn (partial update) ---
+  const payload = {};
+  if (sendWifi) {
+    payload.ssid = ssid;
+    payload.password = password;
   }
+  if (sendMac && peerMac) payload.peerMac = peerMac;
 
-  const base = getTargetBase();
-  const url = base + "/provision";
+  const url = getTargetBase() + "/provision";
 
   // --- UI loading ---
   const btn = $("#btn-submit");
@@ -350,12 +309,7 @@ async function onSubmitProvision(ev) {
     if (resp.ok && bodyJson && bodyJson.ok === true) {
       const msg = bodyJson.message || "Đã lưu cấu hình. Thiết bị sẽ khởi động lại.";
       const macInfo = bodyJson.mac ? "\nMAC thiết bị: " + bodyJson.mac : "";
-      showResult(
-        true,
-        "Cấu hình thành công!",
-        msg + macInfo,
-        bodyJson
-      );
+      showResult(true, "Cấu hình thành công!", msg + macInfo, bodyJson);
     } else {
       // HTTP lỗi hoặc ok=false
       const detail =
@@ -379,11 +333,7 @@ function handleFetchError(err, url) {
   const isHttps = location.protocol === "https:";
   const msg = String(err && err.message ? err.message : err);
 
-  let title = "Không gửi được tới thiết bị";
-  let lines = [];
-
-  lines.push("Lỗi: " + msg);
-  lines.push("Đích: " + url);
+  const lines = ["Lỗi: " + msg, "Đích: " + url];
 
   if (isHttps) {
     lines.push(
@@ -402,7 +352,7 @@ function handleFetchError(err, url) {
     );
   }
 
-  showResult(false, title, lines.join("\n"));
+  showResult(false, "Không gửi được tới thiết bị", lines.join("\n"));
 }
 
 // ---------------------------------------------------------------------------

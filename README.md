@@ -25,7 +25,8 @@ tầng kép và gateway dự phòng.
   Security Rules + Hosting.
 - **Web Dashboard:** đăng nhập Google, biểu đồ realtime (Chart.js), chỉnh Hₛₑₜ/Deadband
   (chỉ admin), trạng thái bồn/bơm, cảnh báo cạn nước. Responsive bằng TailwindCSS.
-- **PWA Provisioning:** quét QR → kết nối SoftAP của ESP → POST WiFi + cấu hình qua REST.
+- **PWA Provisioning:** giữ nút BOOT trên ESP → nối SoftAP của ESP → POST **WiFi + MAC** qua REST
+  (2 checkbox gửi từng phần; QR chỉ để điền nhanh MAC — nhập tay vẫn được).
 
 ## Cấu trúc thư mục
 

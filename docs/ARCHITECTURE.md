@@ -122,15 +122,15 @@ sequenceDiagram
 
 ```mermaid
 sequenceDiagram
-    participant ESP as ESP (boot lần đầu)
+    participant ESP as ESP (giữ nút BOOT)
     participant PWA as PWA / mock
     participant FB as Firebase
 
-    ESP->>ESP: chưa provisioned → bật SoftAP "PROV-MAIN-xxxxxx" + HTTP :80
+    ESP->>ESP: GIỮ nút BOOT lúc khởi động → bật SoftAP "PROV-MAIN-xxxxxx" + HTTP :80
     ESP->>ESP: in QR JSON {id,role,ap,ip,mac} ra Serial
-    PWA->>PWA: quét QR → biết AP + IP + MAC
+    PWA->>PWA: (tuỳ chọn) quét QR của ESP kia → lấy MAC điền sẵn
     PWA->>ESP: (người dùng nối WiFi vào AP của ESP)
-    PWA->>ESP: POST /provision {ssid,password,deviceEmail,devicePassword,peerMac,hset,deadband}
+    PWA->>ESP: POST /provision {ssid,password,peerMac}
     ESP->>ESP: lưu Preferences (NVS) + đặt provisioned=true
     ESP-->>PWA: {ok:true, message:"Saved. Rebooting.", mac}
     ESP->>ESP: ESP.restart() → vào chế độ STA
@@ -167,9 +167,10 @@ sequenceDiagram
 
 ### 3.2. REST provisioning (PWA/trình duyệt → SoftAP của ESP)
 
-**Mục đích:** nạp WiFi + tài khoản thiết bị + cấu hình mặc định cho ESP **không cần hardcode** vào
-firmware. ESP boot lần đầu (chưa có Preferences) sẽ bật SoftAP + HTTP server cổng 80 tại
-`192.168.4.1`.
+**Mục đích:** nạp cấu hình MẠNG (WiFi + MAC ESP còn lại) cho ESP **không cần build lại** firmware.
+Khi GIỮ nút **BOOT (GPIO0)** lúc khởi động, ESP bật SoftAP + HTTP server cổng 80 tại `192.168.4.1`.
+Nếu không giữ nút, ESP chạy bằng cấu hình NVS đã lưu — hoặc **hardcode fallback** khi chưa từng
+provisioning (tiện cho DEV: nạp firmware là chạy ngay).
 
 | Method · Endpoint | Ý nghĩa |
 |---|---|
@@ -179,15 +180,15 @@ firmware. ESP boot lần đầu (chưa có Preferences) sẽ bật SoftAP + HTTP
 | `POST /reset` | xoá Preferences (demo lại) |
 | `OPTIONS *` | preflight CORS (trả 204) |
 
-- **Body POST /provision** (CONTRACT mục 5):
-  `{ ssid, password, deviceEmail, devicePassword, peerMac, hset, deadband }`.
+- **Body POST /provision** (CONTRACT mục 5, bản gọn): `{ ssid, password, peerMac }`.
+  (`deviceEmail`/`devicePassword` giờ hardcode trong firmware; `hset`/`deadband` dùng mặc định + web.)
 - **Phản hồi:** `{ ok: true, message: "Saved. Rebooting.", mac }`.
 - **CORS:** ESP trả `Access-Control-Allow-Origin: *` để PWA gọi được từ trình duyệt.
 - **Mixed-content:** PWA chạy HTTPS không POST thẳng tới ESP HTTP → giải pháp: mở PWA qua `http://`
   (server local) hoặc dùng trang `GET /` do ESP tự phục vụ (same-origin). Khi test không phần cứng,
   PWA bật **Chế độ Test** trỏ tới `tools/mock-esp-server` (`http://localhost:8080`).
-- **QR payload** (CONTRACT mục 6, JSON 1 dòng): `{"id","role","ap","ip","mac"}` — PWA quét để biết AP
-  cần nối, IP để POST, và điền sẵn `peerMac`.
+- **QR payload** (CONTRACT mục 6, JSON 1 dòng): `{"id","role","ap","ip","mac"}` — giờ PWA chỉ dùng
+  field `mac` để điền nhanh ô "MAC của ESP còn lại" (quét QR in trên ESP kia). Nhập tay vẫn được.
 
 ### 3.3. Firebase Realtime Database (đám mây ↔ thiết bị ↔ web)
 
@@ -264,3 +265,17 @@ Cùng một logic được hiện thực ở 3 nơi (giữ nhất quán): firmwa
   được nạp để sẵn sàng chuyển sang unicast khi tích hợp thật.
 - **Provisioning qua REST + Preferences (NVS)** thay vì hardcode WiFi → đổi mạng không cần build lại.
 - **Công cụ giả lập** cho phép nghiệm thu toàn bộ luồng phần mềm trước khi có ESP32 thật.
+- **NVS-first, hardcode-fallback + nút BOOT** (đợt 2026-07): ESP đọc cấu hình từ NVS trước, thiếu thì
+  dùng hằng số `HC_*` trong firmware → nạp là chạy ngay khi dev. Vào provisioning bằng **giữ nút BOOT**
+  lúc khởi động (giống thiết bị smart home), không còn kẹt SoftAP khi chưa cấu hình.
+- **Tài khoản Firebase của thiết bị hardcode trong firmware** (`HC_DEV_EMAIL`/`HC_DEV_PASS`) để app
+  provisioning gọn còn **WiFi + MAC**. App có **2 checkbox (WiFi/MAC)** → `POST /provision` **partial
+  update** (chỉ ghi field có trong JSON, nhận cả `peerMac` lẫn `mac_gateway`).
+- **Phát hiện online/offline theo `lastSeen`** (web tự suy `now − lastSeen < ~15s` + timer client),
+  không dựa cờ `esp1Online` — giải bài toán "thiết bị không tự báo offline được" mà **không cần backend**.
+- **Gộp ghi Firebase bằng `setJSON`**: `/sensor` và `/status` mỗi node ghi 1 lần (2 request/chu kỳ thay
+  vì 9) → giảm bắt tay TLS → nhẹ CPU/sóng/nhiệt cho ESP.
+- **Giữ PWA tự viết cho provisioning** (SoftAP + REST) thay vì app Espressif chính chủ: app chính chủ
+  thiên về dev (cần đọc QR/POP qua terminal); luồng "nối AP → gọi API" tự viết đơn giản & consumer hơn.
+  Giới hạn đã biết: PWA (web) không đọc được SSID/IP điện thoại và không auto-connect WiFi (đó là khả
+  năng của app native/SmartConfig) — nên có nút test `/info` để chẩn đoán thay thế.

@@ -30,6 +30,20 @@
 #define SHT30_I2C_ADDR   0x44 // Địa chỉ I²C mặc định của SHT30
 #define PIN_SWITCH_ROLE  4    // (Nâng cao) công tắc chuyển ESP2 -> gateway, INPUT_PULLUP
 
+// Nút kích hoạt lại provisioning: GIỮ lúc KHỞI ĐỘNG -> vào SoftAP cấu hình lại
+// (giống "bấm reset mạng"). Mặc định GPIO0 = nút BOOT có sẵn trên board ESP32.
+#define PIN_PROV_BUTTON        0    // GPIO0 (nút BOOT)
+#define PROV_BUTTON_ACTIVE_LOW 1    // 1 = nhấn kéo xuống LOW
+
+// ----------------------------------------------------------------------------
+//  HARDCODE FALLBACK — SSID router mặc định khi CHƯA provisioning qua app.
+//  ESP2 KHÔNG nối WiFi, nhưng cần SSID router để DÒ KÊNH ESP-NOW trùng với ESP1.
+//  NVS-first: nếu app đã cấu hình thì dùng NVS; trống -> rơi về hằng số dưới.
+//  (Để đúng cùng WiFi với ESP1, HC_WIFI_SSID nên khớp bên esp1_main/main.cpp.)
+// ----------------------------------------------------------------------------
+#define HC_WIFI_SSID   "chipchip"    // SSID router (dev) — khớp ESP1
+#define HC_WIFI_PASS   "244466666"   // (ESP2 không nối, giữ cho đồng nhất)
+
 // Chu kỳ đọc + gửi cảm biến (~5 giây theo yêu cầu Basic).
 #define SENSOR_INTERVAL_MS  5000UL
 
@@ -70,6 +84,21 @@ void onEspNowSent(const uint8_t* mac_addr, esp_now_send_status_t status) {
 //  với ESP1 (ESP1 là STA nên ESP-NOW của nó nằm trên kênh router). Trả về kênh
 //  1..13 nếu quét thấy SSID, hoặc 0 nếu không thấy.
 // ----------------------------------------------------------------------------
+// Đọc cấu hình theo NVS-first, hardcode-fallback: field trống -> điền hằng số HC_*.
+ProvConfig loadConfigWithFallback() {
+  ProvConfig cfg = Provisioning::isProvisioned() ? Provisioning::load() : ProvConfig();
+  if (cfg.ssid.length() == 0) cfg.ssid = HC_WIFI_SSID;
+  if (cfg.pass.length() == 0) cfg.pass = HC_WIFI_PASS;
+  return cfg;
+}
+
+// true nếu người dùng GIỮ nút provisioning lúc khởi động -> muốn cấu hình lại.
+bool provisioningRequested() {
+  pinMode(PIN_PROV_BUTTON, PROV_BUTTON_ACTIVE_LOW ? INPUT_PULLUP : INPUT);
+  delay(30);  // ổn định mức logic
+  return digitalRead(PIN_PROV_BUTTON) == (PROV_BUTTON_ACTIVE_LOW ? LOW : HIGH);
+}
+
 int discoverRouterChannel(const String& ssid) {
   if (ssid.length() == 0) return 0;          // chưa có SSID -> không dò được
   int n = WiFi.scanNetworks(false, false);   // quét đồng bộ, bỏ qua mạng ẩn
@@ -217,17 +246,18 @@ void setup() {
   // Đọc trạng thái công tắc switch-role sớm (chỉ để log ở giai đoạn này).
   pinMode(PIN_SWITCH_ROLE, INPUT_PULLUP);
 
-  // --- Chưa provisioning -> vào chế độ SoftAP để nạp cấu hình rồi return. ---
-  if (!Provisioning::isProvisioned()) {
-    Serial.println("[PROV] Chưa cấu hình -> bật SoftAP provisioning (role=sensor).");
+  // --- GIỮ nút BOOT lúc khởi động -> vào SoftAP để cấu hình lại rồi return. ---
+  if (provisioningRequested()) {
+    Serial.println("[PROV] Giữ nút BOOT -> bật SoftAP provisioning (role=sensor).");
     Provisioning::beginAP("sensor");
     // loop() sẽ gọi Provisioning::handle() để phục vụ HTTP + tự restart sau khi nạp.
     return;
   }
 
-  // --- Đã provisioning -> chạy chế độ sensor bình thường. ---
-  ProvConfig cfg = Provisioning::load();
-  Serial.printf("[PROV] Đã cấu hình. SSID=\"%s\", hset=%d, deadband=%d\n",
+  // --- Nạp cấu hình: NVS-first, hardcode-fallback (chạy được ngay cả khi chưa provisioning). ---
+  ProvConfig cfg = loadConfigWithFallback();
+  Serial.printf("[PROV] Cấu hình (%s). SSID=\"%s\", hset=%d, deadband=%d\n",
+                Provisioning::isProvisioned() ? "NVS/app" : "hardcode fallback",
                 cfg.ssid.c_str(), cfg.hset, cfg.deadband);
   // Ghi chú: ESP2 KHÔNG nối WiFi/Firebase ở Basic, nhưng cfg.ssid VẪN được dùng để
   // DÒ KÊNH router (cho ESP-NOW trùng kênh ESP1). devEmail/devPass chỉ dùng khi bật

@@ -48,10 +48,38 @@
 #define FB_DATABASE_URL "https://smart-humidity-iot-default-rtdb.asia-southeast1.firebasedatabase.app/"
 
 // ============================================================================
+//  HARDCODE FALLBACK — cấu hình mặc định khi CHƯA provisioning qua app.
+//
+//  Chiến lược "NVS-first, hardcode-fallback":
+//    - Nếu đã cấu hình qua app (Preferences/NVS) -> DÙNG giá trị đó.
+//    - Nếu field nào trống (chưa provisioning) -> rơi về hằng số dưới đây.
+//  Nhờ vậy: giai đoạn DEV chỉ cần nạp firmware là chạy ngay (dùng hardcode),
+//  KHÔNG bắt buộc phải qua bước provisioning. Khi DEMO thì giữ nút BOOT lúc khởi
+//  động -> vào SoftAP -> app gửi WiFi/MAC -> lưu NVS -> ưu tiên dùng NVS.
+//
+//  * Tài khoản THIẾT BỊ Firebase (devEmail/devPass): app KHÔNG còn hỏi 2 trường
+//    này nữa (cho gọn), nên PHẢI điền sẵn ở đây — tạo trong Firebase Auth và seed
+//    UID vào /devices/<UID>=true (xem docs/SETUP.md).
+// ============================================================================
+#define HC_WIFI_SSID   "chipchip"                       // WiFi nhà (dev)
+#define HC_WIFI_PASS   "244466666"                       // mật khẩu WiFi (dev)
+#define HC_DEV_EMAIL   "device@smarthumidity.iot"        // tài khoản thiết bị (UID w3lYinUKv0NQo0w2PwhpbJ0U3c62)
+#define HC_DEV_PASS    "123456"                           // mật khẩu thiết bị (thử — reset trong Console nếu login fail)
+#define HC_PEER_MAC    ""                                 // MAC ESP2 (rỗng -> vẫn nhận broadcast)
+#define HC_HSET        70                                 // ngưỡng độ ẩm mặc định
+#define HC_DEADBAND    5                                  // vùng chết mặc định
+
+// ============================================================================
 //  CẤU HÌNH GPIO (CONTRACT mục 8) — đổi được tại đây.
 // ============================================================================
 #define PIN_RELAY          26   // Relay máy phun sương (OUTPUT)
 #define RELAY_ACTIVE_HIGH  1    // 1 = relay kích mức CAO (HIGH bật); 0 = kích mức THẤP
+
+// Nút kích hoạt lại provisioning: GIỮ nút này lúc KHỞI ĐỘNG -> vào SoftAP để
+// cấu hình lại WiFi/MAC qua app (giống "bấm reset mạng" của thiết bị smart home).
+// Mặc định GPIO0 = nút BOOT có sẵn trên hầu hết board ESP32 DevKit (không cần đấu thêm).
+#define PIN_PROV_BUTTON       0    // GPIO0 (nút BOOT)
+#define PROV_BUTTON_ACTIVE_LOW 1   // 1 = nhấn kéo xuống LOW (BOOT button)
 
 // Nâng cao (Advanced): cảm biến mức nước / tiếp điểm bơm — chỉ ĐỌC.
 //   GPIO 34/35 là chân chỉ-INPUT (không pull nội), nối qua mạch chia/điện trở ngoài.
@@ -123,6 +151,28 @@ uint32_t nowEpoch() {
   // Trước khi NTP đồng bộ, time() trả giá trị rất nhỏ (gần 1970) -> coi như chưa có.
   if (t < 1700000000) return 0;   // ~2023-11 trở đi mới coi là hợp lệ
   return (uint32_t)t;
+}
+
+// Đọc cấu hình theo chiến lược NVS-first, hardcode-fallback: lấy giá trị đã
+// provisioning (nếu có), field nào trống thì điền bằng hằng số HC_* ở đầu file.
+ProvConfig loadConfigWithFallback() {
+  ProvConfig cfg = Provisioning::isProvisioned() ? Provisioning::load() : ProvConfig();
+  if (cfg.ssid.length()     == 0) cfg.ssid     = HC_WIFI_SSID;
+  if (cfg.pass.length()     == 0) cfg.pass     = HC_WIFI_PASS;
+  if (cfg.devEmail.length() == 0) cfg.devEmail = HC_DEV_EMAIL;
+  if (cfg.devPass.length()  == 0) cfg.devPass  = HC_DEV_PASS;
+  if (cfg.peerMac.length()  == 0) cfg.peerMac  = HC_PEER_MAC;
+  // hset/deadband: ProvConfig/load() đã mặc định 70/5, nhưng ép lại HC_* cho rõ ý.
+  if (!Provisioning::isProvisioned()) { cfg.hset = HC_HSET; cfg.deadband = HC_DEADBAND; }
+  return cfg;
+}
+
+// true nếu người dùng GIỮ nút provisioning lúc khởi động -> muốn cấu hình lại.
+bool provisioningRequested() {
+  pinMode(PIN_PROV_BUTTON, PROV_BUTTON_ACTIVE_LOW ? INPUT_PULLUP : INPUT);
+  delay(30);  // ổn định mức logic
+  bool pressed = (digitalRead(PIN_PROV_BUTTON) == (PROV_BUTTON_ACTIVE_LOW ? LOW : HIGH));
+  return pressed;
 }
 
 // Chuyển chuỗi MAC "11:22:33:44:55:66" -> 6 byte. Trả false nếu sai định dạng.
@@ -355,14 +405,17 @@ void runDeadband(float humidity) {
 void pushToFirebase() {
   uint32_t ts = nowEpoch();
 
-  // ---- /sensor ----
+  // ---- /sensor (GỘP: 1 request thay vì 3) ----
   // Chỉ đẩy khi có dữ liệu hợp lệ VÀ không bị stale. Khi stale (mất gói ESP2 quá lâu)
   // ta NGỪNG ghi /sensor để timestamp không tăng giả -> web thấy số đo "đứng" đúng thực tế.
+  // Dùng setJSON: ghi cả node /sensor trong MỘT lần (1 kết nối TLS thay vì 3) -> nhẹ tải,
+  // ít bắt tay TLS -> đỡ tốn CPU/sóng/nhiệt cho ESP.
   if (!g_sensorStale && !isnan(g_latestTemp) && !isnan(g_latestHumi)) {
-    bool ok1 = Firebase.RTDB.setFloat(&fbdo, "/sensor/temperature", g_latestTemp);
-    bool ok2 = Firebase.RTDB.setFloat(&fbdo, "/sensor/humidity",    g_latestHumi);
-    bool ok3 = Firebase.RTDB.setInt(  &fbdo, "/sensor/timestamp",   (int)ts);
-    if (!(ok1 && ok2 && ok3)) {
+    FirebaseJson jsSensor;
+    jsSensor.set("temperature", g_latestTemp);
+    jsSensor.set("humidity",    g_latestHumi);
+    jsSensor.set("timestamp",   (int)ts);
+    if (!Firebase.RTDB.setJSON(&fbdo, "/sensor", &jsSensor)) {
       Serial.printf("[FB] Ghi /sensor loi: %s\n", fbdo.errorReason().c_str());
     }
   }
@@ -379,17 +432,18 @@ void pushToFirebase() {
   pump = (digitalRead(PIN_PUMP_SENSE) == HIGH);
 #endif
 
-  // ---- /status ----
-  bool s1 = Firebase.RTDB.setBool(  &fbdo, "/status/mist",       g_mist);
-  bool s2 = Firebase.RTDB.setString(&fbdo, "/status/tank",       tank);
-  bool s3 = Firebase.RTDB.setBool(  &fbdo, "/status/pump",       pump);
-  bool s4 = Firebase.RTDB.setBool(  &fbdo, "/status/esp1Online", true);
-  bool s5 = Firebase.RTDB.setString(&fbdo, "/status/gateway",    "esp1");
-  bool s6 = Firebase.RTDB.setInt(   &fbdo, "/status/lastSeen",   (int)ts);
-  if (!(s1 && s2 && s3 && s4 && s5 && s6)) {
+  // ---- /status (GỘP: 1 request thay vì 6) ----
+  FirebaseJson jsStatus;
+  jsStatus.set("mist",       g_mist);
+  jsStatus.set("tank",       tank);
+  jsStatus.set("pump",       pump);
+  jsStatus.set("esp1Online", true);
+  jsStatus.set("gateway",    "esp1");
+  jsStatus.set("lastSeen",   (int)ts);
+  if (!Firebase.RTDB.setJSON(&fbdo, "/status", &jsStatus)) {
     Serial.printf("[FB] Ghi /status loi: %s\n", fbdo.errorReason().c_str());
   } else {
-    Serial.printf("[FB] Da day: T=%.1f H=%.1f mist=%d tank=%s pump=%d ts=%lu\n",
+    Serial.printf("[FB] Da day (2 request): T=%.1f H=%.1f mist=%d tank=%s pump=%d ts=%lu\n",
                   g_latestTemp, g_latestHumi, g_mist, tank.c_str(), pump,
                   (unsigned long)ts);
   }
@@ -405,18 +459,20 @@ void setup() {
   Serial.println(F("=== ESP1 MAIN NODE — Smart Humidity IoT ==="));
   Serial.print  (F("Firmware version: ")); Serial.println(FW_VERSION);
 
-  // --- Chưa cấu hình -> vào chế độ provisioning (SoftAP) rồi DỪNG setup ---
-  if (!Provisioning::isProvisioned()) {
-    Serial.println(F("[BOOT] Chua cau hinh -> bat SoftAP provisioning."));
+  // --- GIỮ nút BOOT lúc khởi động -> vào chế độ provisioning (SoftAP) rồi DỪNG setup.
+  //     (Giống "bấm reset mạng" của thiết bị smart home: phát AP để app cấu hình lại.) ---
+  if (provisioningRequested()) {
+    Serial.println(F("[BOOT] Giu nut BOOT -> bat SoftAP provisioning."));
     Provisioning::beginAP("main");   // role "main" (CONTRACT mục 1)
     return;                          // loop() se goi Provisioning::handle()
   }
 
-  // --- Đã cấu hình -> nạp cấu hình từ Preferences ---
-  g_cfg = Provisioning::load();
-  g_hset     = (float)g_cfg.hset;       // khởi tạo tham số điều khiển từ provisioning
+  // --- Nạp cấu hình: NVS-first, hardcode-fallback (chạy được ngay cả khi chưa provisioning) ---
+  g_cfg = loadConfigWithFallback();
+  g_hset     = (float)g_cfg.hset;       // khởi tạo tham số điều khiển
   g_deadband = (float)g_cfg.deadband;
-  Serial.printf("[BOOT] Da cau hinh. SSID=%s, devEmail=%s, peerMac=%s, hset=%d, deadband=%d\n",
+  Serial.printf("[BOOT] Cau hinh (%s). SSID=%s, devEmail=%s, peerMac=%s, hset=%d, deadband=%d\n",
+                Provisioning::isProvisioned() ? "NVS/app" : "hardcode fallback",
                 g_cfg.ssid.c_str(), g_cfg.devEmail.c_str(), g_cfg.peerMac.c_str(),
                 g_cfg.hset, g_cfg.deadband);
 

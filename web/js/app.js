@@ -246,14 +246,47 @@ function attachListeners() {
 }
 
 // ============================================================================
-//  RENDER TRẠNG THÁI THIẾT BỊ
+//  PHÁT HIỆN ONLINE/OFFLINE — theo lastSeen (KHÔNG tin cờ esp1Online)
+//
+//  Bài toán presence: thiết bị KHÔNG thể tự báo "tôi offline" (mất mạng thì báo
+//  sao được). Vì vậy VIEWER (web) tự suy: nếu lastSeen quá cũ so với giờ hiện tại
+//  -> coi như mất kết nối. Không cần backend/service chạy ngầm.
+//
+//  ESP đẩy /status (kèm lastSeen mới) mỗi ~4s -> quá ONLINE_TIMEOUT_S không thấy
+//  cập nhật thì lật sang offline. Vì onValue chỉ bắn khi dữ liệu ĐỔI (ESP chết thì
+//  ngừng bắn), ta chạy thêm 1 timer client tự đánh giá lại định kỳ.
+//
+//  Lưu ý: dựa vào lastSeen (epoch giây từ NTP của ESP) so với đồng hồ trình duyệt.
+//  Cả hai thường đã đồng bộ NTP nên lệch không đáng kể; để ngưỡng rộng cho an toàn.
 // ============================================================================
-function renderStatus(st) {
-  // Online: dựa vào esp1Online (heartbeat).
-  const online = st.esp1Online === true;
+const ONLINE_TIMEOUT_S = 15;   // > chu kỳ đẩy (~4s); quá 15s coi như mất kết nối
+let g_lastStatus = null;       // /status gần nhất (để timer re-check)
+let g_onlineTimer = null;      // timer tự lật offline khi lastSeen quá hạn
+
+function isDeviceOnline(st) {
+  if (!st) return false;
+  const lastSeen = Number(st.lastSeen) || 0;
+  if (lastSeen <= 0) return false;              // chưa có NTP / chưa từng thấy heartbeat
+  const nowSec = Math.floor(Date.now() / 1000);
+  return (nowSec - lastSeen) < ONLINE_TIMEOUT_S;
+}
+
+function renderOnline() {
+  const online = isDeviceOnline(g_lastStatus);
   els.onlineDot.className = "dot " + (online ? "dot-online" : "dot-offline");
   els.onlineText.textContent = online ? "Trực tuyến" : "Mất kết nối";
   els.onlineText.className = online ? "text-green-400 font-medium" : "text-gray-400 font-medium";
+}
+
+// ============================================================================
+//  RENDER TRẠNG THÁI THIẾT BỊ
+// ============================================================================
+function renderStatus(st) {
+  // Online: suy từ lastSeen (xem khối trên) thay vì tin cờ esp1Online.
+  g_lastStatus = st;
+  renderOnline();
+  // Bật timer tự lật offline khi ESP ngừng cập nhật (chỉ tạo 1 lần).
+  if (!g_onlineTimer) g_onlineTimer = setInterval(renderOnline, 5000);
 
   // Máy phun (mist).
   setBadge(els.stMist, st.mist === true,

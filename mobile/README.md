@@ -1,9 +1,12 @@
-# PWA Provisioning — Cấu hình WiFi cho ESP (QR + REST)
+# PWA Provisioning — Cấu hình mạng cho ESP (WiFi + MAC)
 
-App web cài được (PWA) để nạp cấu hình WiFi + tài khoản Firebase vào thiết bị ESP của hệ thống
-**Smart Humidity IoT**. Hoạt động theo `docs/CONTRACT.md` mục 5 (REST provisioning) và mục 6 (QR payload).
+App web cài được (PWA) để nạp **cấu hình mạng** vào thiết bị ESP của hệ thống **Smart Humidity IoT**
+— đúng chuẩn ngành IoT (giống cấu hình một camera WiFi). App chỉ hỏi **WiFi + MAC của ESP còn lại**.
+Hoạt động theo `docs/CONTRACT.md` mục 5 (REST provisioning) và mục 6 (QR payload).
 
 > Provisioning **không bắt buộc đăng nhập** Firebase. App chỉ POST cấu hình tới ESP qua mạng cục bộ.
+> Tài khoản Firebase của thiết bị được **hardcode trong firmware**, còn `hset`/`deadband` chỉnh sau
+> qua web dashboard — nên app KHÔNG hỏi mấy thứ này (cho gọn).
 
 ## Có gì trong thư mục
 
@@ -13,22 +16,28 @@ mobile/
 ├── manifest.webmanifest   # PWA installable ("thêm vào màn hình chính")
 ├── sw.js                  # Service worker — cache vỏ ứng dụng, không cache POST
 └── js/
-    ├── app.js             # Luồng chính: state QR, form, POST, hiển thị response
-    └── qr.js              # Quét QR bằng html5-qrcode + parse JSON {id,role,ap,ip,mac}
+    ├── app.js             # Luồng chính: form, quét QR điền MAC, POST, hiển thị response
+    └── qr.js              # Quét QR bằng html5-qrcode (chỉ dùng field `mac`)
 ```
 
 ## Luồng sử dụng
 
-1. **Quét QR** dán trên thiết bị → lấy `{id, role, ap, ip, mac}`. Không có QR thì bấm **Nhập tay**
-   và điền IP (mặc định `192.168.4.1`).
-2. **Kết nối WiFi**: trên điện thoại vào Cài đặt → WiFi, nối tới AP của ESP (vd `PROV-MAIN-A1B2C3`,
-   mật khẩu mặc định `12345678` nếu có). Khi nối vào AP, điện thoại có thể tạm mất Internet — bình thường.
-3. **Điền form**: SSID/mật khẩu WiFi nhà; với `role=main` (ESP1) cần thêm `deviceEmail`/`devicePassword`
-   (tài khoản thiết bị tạo trong Firebase Auth) và `peerMac` (MAC của ESP2, tự điền từ QR); `hset`/`deadband`
-   (mặc định 70 / 5).
-4. **Gửi cấu hình** → POST JSON tới `http://<ip>/provision`. App hiển thị rõ kết quả + **response thô (raw JSON)** từ thiết bị.
-5. **Chế độ Test**: bật toggle để POST tới `http://localhost:8080` (`tools/mock-esp-server`) — thử
-   toàn bộ luồng mà không cần phần cứng.
+1. **Bật chế độ cấu hình trên ESP**: GIỮ nút **BOOT** rồi cấp nguồn → ESP phát WiFi tên
+   `PROV-MAIN-A1B2C3` / `PROV-SENSOR-…`.
+2. **Kết nối WiFi**: trên điện thoại vào Cài đặt → WiFi, nối tới AP đó (mật khẩu mặc định `12345678`
+   nếu có). Khi nối vào AP, điện thoại có thể tạm mất Internet — bình thường.
+3. **Điền form** — có **2 checkbox: WiFi và MAC**, tick cái nào thì **chỉ gửi cái đó** (cho phép cập
+   nhật riêng WiFi hoặc riêng MAC mà không đụng phần kia — ESP làm *partial update*):
+   - **WiFi**: tên WiFi nhà (SSID) + mật khẩu.
+   - **MAC của ESP còn lại**: **gõ tay** hoặc bấm **Quét QR** in trên ESP kia để điền nhanh. (Để trống
+     cũng được — ESP-NOW vẫn nhận broadcast.)
+4. (Tuỳ chọn) **Kiểm tra kết nối** — nút gọi `GET /info` để xác nhận điện thoại tới được ESP + xem ESP
+   báo về (role, MAC, đã cấu hình chưa). Lưu ý: trình duyệt **không** đọc được tên WiFi / IP của điện
+   thoại (giới hạn bảo mật web), nên phần chẩn đoán dựa vào `/info` của ESP.
+5. **Gửi cấu hình** → POST JSON tới `http://<ip>/provision`. App hiển thị rõ kết quả + **response thô
+   (raw JSON)** từ thiết bị. ESP tự khởi động lại và vào mạng nhà.
+5. **Chế độ Test** (trong "Tuỳ chọn nâng cao"): POST tới `http://localhost:8080` (`tools/mock-esp-server`)
+   — thử toàn bộ luồng mà không cần phần cứng.
 
 ### Schema POST `/provision` (theo CONTRACT mục 5)
 
@@ -36,14 +45,12 @@ mobile/
 {
   "ssid": "TenWiFiNha",
   "password": "matkhauwifi",
-  "deviceEmail": "device@project.iot",
-  "devicePassword": "********",
-  "peerMac": "11:22:33:44:55:66",
-  "hset": 70,
-  "deadband": 5
+  "peerMac": "11:22:33:44:55:66"
 }
 ```
-> `deviceEmail`/`devicePassword`/`peerMac` chỉ gửi khi `role = main` (ESP1).
+> **Partial update:** app chỉ gửi field ứng với checkbox được tick — ESP chỉ ghi field có trong JSON,
+> field vắng mặt giữ nguyên. Nếu tick WiFi thì `ssid` không được rỗng. Field MAC nhận cả `peerMac` lẫn
+> `mac_gateway`. ESP vẫn chấp nhận field cũ (`deviceEmail`…) nếu gửi kèm, nhưng app không còn gửi nữa.
 
 Phản hồi mong đợi: `{ "ok": true, "message": "Saved. Rebooting.", "mac": "A1:B2:C3:D4:E5:F6" }`.
 
@@ -63,7 +70,8 @@ python -m http.server 5500        # → http://localhost:5500
 
 - Mở trên máy tính: `http://localhost:5500` (service worker + camera hoạt động vì localhost là secure context).
 - Mở trên điện thoại cùng WiFi: `http://<IP-máy-bạn>:5500`. Lưu ý: trên IP-LAN (không phải localhost),
-  trình duyệt **không cấp quyền camera** vì không phải HTTPS → dùng nút **Nhập tay** rồi điền IP của ESP.
+  trình duyệt **không cấp quyền camera** vì không phải HTTPS → cứ **gõ MAC bằng tay** vào ô MAC
+  (nút Quét QR sẽ không mở được camera trong trường hợp này).
 
 ### B. Deploy HTTPS (vd Firebase Hosting) — chỉ để demo giao diện
 

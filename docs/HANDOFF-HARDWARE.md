@@ -20,13 +20,31 @@
 - **Driver USB** của ESP32: CP210x hoặc CH340 (tuỳ board) để máy nhận cổng COM.
 
 ## 2. Điền cấu hình TRƯỚC khi nạp (chỉ ESP1)
-Mở `firmware/src/esp1_main/main.cpp`, điền 2 dòng đầu file:
+Mở `firmware/src/esp1_main/main.cpp`, điền:
+
+**(a) Firebase** (khối `FB_*`):
 ```cpp
 #define FB_API_KEY      "..."   // Web API Key (Firebase Console → Project settings)
 #define FB_DATABASE_URL "https://<project>-default-rtdb.asia-southeast1.firebasedatabase.app/"
 ```
-> WiFi và tài khoản thiết bị **KHÔNG hardcode** — sẽ nạp qua provisioning ở bước 5.
-> ESP2 không cần sửa gì trước khi nạp.
+
+**(b) Tài khoản THIẾT BỊ Firebase** (khối `HC_*` — hardcode vì app không còn hỏi 2 trường này):
+```cpp
+#define HC_DEV_EMAIL   "device@<project>.iot"   // tài khoản thiết bị đã tạo trong Firebase Auth
+#define HC_DEV_PASS    "<mật khẩu thiết bị>"     // + seed UID vào /devices/<UID> (xem SETUP.md)
+```
+
+**(c) WiFi mặc định (tuỳ chọn)** — khối `HC_WIFI_SSID`/`HC_WIFI_PASS` ở cả `esp1_main` và
+`esp2_sensor`. Đây là WiFi dùng khi **chưa provisioning** (tiện test nhanh): nạp là chạy ngay.
+Nếu sẽ cấu hình WiFi qua app thì để nguyên cũng được (app sẽ ghi đè).
+```cpp
+#define HC_WIFI_SSID   "chipchip"      // đổi thành WiFi của bạn nếu muốn chạy ngay không cần app
+#define HC_WIFI_PASS   "244466666"
+```
+> **Chiến lược NVS-first, hardcode-fallback:** ESP ưu tiên cấu hình do app nạp (Preferences/NVS);
+> field nào trống thì dùng hằng số `HC_*` ở trên. Nhờ vậy nạp firmware là chạy được ngay, và app
+> vẫn cấu hình lại được khi cần.
+> ESP2 chỉ cần khớp `HC_WIFI_SSID` với ESP1 (để dò kênh ESP-NOW), không cần tài khoản Firebase.
 
 ## 3. Đấu nối
 Theo [WIRING.md](WIRING.md). Tóm tắt:
@@ -43,17 +61,19 @@ pio device monitor -b 115200        # xem Serial để theo dõi
 ```
 > Nếu báo lỗi cổng COM: chọn đúng cổng (`pio device list`), hoặc giữ nút BOOT khi nạp.
 
-## 5. Provisioning lần đầu (mỗi ESP, làm 1 lần)
-Khi boot mà **chưa cấu hình**, ESP phát WiFi AP riêng:
-1. ESP2 phát `PROV-SENSOR-xxxxxx`, ESP1 phát `PROV-MAIN-xxxxxx` (IP `192.168.4.1`).
+## 5. Provisioning cấu hình mạng (khi cần đổi WiFi/MAC)
+Nếu WiFi đã hardcode ở bước 2 khớp mạng thật thì ESP chạy luôn — **có thể bỏ qua bước này**. Khi muốn
+cấu hình mạng qua app (giống thiết bị smart home):
+1. **GIỮ nút BOOT** rồi cấp nguồn/nhấn EN → ESP2 phát `PROV-SENSOR-xxxxxx`, ESP1 phát `PROV-MAIN-xxxxxx`
+   (IP `192.168.4.1`). (Không giữ nút → ESP chạy bằng cấu hình đã lưu / hardcode.)
 2. Trên điện thoại: nối WiFi vào AP đó → mở **PWA provisioning** (hoặc mở thẳng `http://192.168.4.1/`).
-3. Nhập:
-   - **Cả hai ESP:** SSID + mật khẩu WiFi nhà.
-   - **Riêng ESP1 (main):** thêm `deviceEmail` + `devicePassword` (tài khoản thiết bị) và **`peerMac` = MAC của ESP2**.
-4. Bấm gửi → ESP lưu vào Flash và tự khởi động lại vào chế độ chạy.
+3. Nhập (cho cả hai ESP giống nhau): **SSID + mật khẩu WiFi nhà + MAC của ESP còn lại** (gõ tay hoặc
+   quét QR). Tài khoản Firebase và hset/deadband **không phải nhập** (đã hardcode / dùng mặc định).
+4. Bấm gửi → ESP lưu vào Flash (NVS) và tự khởi động lại vào chế độ chạy.
 
 > **Lấy MAC của ESP2:** xem Serial của ESP2 (dòng `MAC STA của ESP2: ...`) khi nó chạy.
-> **Làm lại provisioning:** gửi `POST /reset` tới ESP, hoặc xoá NVS (nạp lại / `Preferences.clear()`).
+> **Xoá cấu hình đã nạp:** gửi `POST /reset` (ESP quay về dùng hardcode fallback). Để cấu hình lại
+> qua app thì giữ nút BOOT lúc khởi động như bước 1.
 
 ## 6. Checklist nghiệm thu (đọc Serial 115200)
 | Bước | Dấu hiệu đúng |
@@ -70,10 +90,10 @@ Khi boot mà **chưa cấu hình**, ESP phát WiFi AP riêng:
 |---|---|
 | ESP1 **không nhận** gói ESP-NOW | Kênh lệch. Kiểm Serial ESP2 có dòng `Da do thay router ... o kenh N` không; đảm bảo ESP2 được provisioning **đúng SSID router** mà ESP1 đang nối. Để 2 board gần nhau khi test. |
 | SHT30 `khong tim thay cam bien` | Sai dây I²C / địa chỉ (phải `0x44`) / cấp nhầm 5V. Kiểm SDA21–SCL22, nguồn 3V3, GND chung. |
-| Firebase `Ghi /sensor loi` / permission | Tài khoản thiết bị **chưa seed** vào `/devices/<UID>=true`, hoặc sai email/pass nạp lúc provisioning (xem [SETUP.md](SETUP.md) mục 5). |
+| Firebase `Ghi /sensor loi` / permission | Tài khoản thiết bị **chưa seed** vào `/devices/<UID>=true`, hoặc sai `HC_DEV_EMAIL`/`HC_DEV_PASS` (bước 2b) — kiểm lại và nạp lại (xem [SETUP.md](SETUP.md) mục 5). |
 | Relay **ngược** (bật khi đáng tắt) | Module relay active-LOW → đặt `#define RELAY_ACTIVE_HIGH 0` trong `esp1_main/main.cpp` rồi nạp lại. |
-| WiFi không nối được | Sai SSID/mật khẩu → provisioning lại (`POST /reset`). |
-| Web báo **“Mất kết nối”** | `esp1Online` không lên → ESP1 chưa nối WiFi/Firebase; xem Serial ESP1. |
+| WiFi không nối được | Sai SSID/mật khẩu → sửa `HC_WIFI_*` rồi nạp lại, **hoặc** giữ BOOT lúc khởi động để provisioning lại qua app (bước 5). |
+| Web báo **“Mất kết nối”** | Web suy từ `lastSeen`: quá ~15s không cập nhật → offline. Nghĩa là ESP1 ngừng đẩy (chưa nối WiFi/Firebase, hoặc treo/crash); xem Serial ESP1. Nếu ESP chưa đồng bộ NTP (`lastSeen=0`) cũng bị coi là offline. |
 | Số đo trên web **đứng yên** | Đúng hành vi khi mất gói cảm biến >15s (ESP1 ngừng đẩy `/sensor`). Kiểm lại ESP2/ESP-NOW. |
 
 ## 8. Bật tính năng nâng cao (khi có phần cứng nước)
@@ -82,5 +102,5 @@ Khi boot mà **chưa cấu hình**, ESP phát WiFi AP riêng:
 
 ## 9. Ranh giới phần mềm / phần cứng
 - **Đã làm (phần code):** toàn bộ firmware ESP1/ESP2, web dashboard, PWA provisioning, tools, Firebase rules — biên dịch & verify (không phần cứng) OK.
-- **Việc phần cứng (bạn):** đấu nối, nạp, điền `FB_API_KEY/FB_DATABASE_URL`, chỉnh `#define` chân/mức relay nếu khác, provisioning, nghiệm thu.
+- **Việc phần cứng (bạn):** đấu nối, nạp, điền `FB_API_KEY/FB_DATABASE_URL` + tài khoản thiết bị `HC_DEV_EMAIL/HC_DEV_PASS` (bước 2), chỉnh `#define` chân/mức relay nếu khác, provisioning (nếu cần), nghiệm thu.
 - Cần đổi **logic** (không phải thông số/chân) → liên hệ người phụ trách code.

@@ -25,7 +25,7 @@ Làm theo đúng thứ tự. (Bản tóm tắt ngắn ở [SETUP.md](SETUP.md); 
 ### B3. Tạo tài khoản thiết bị (cho ESP1 đăng nhập Firebase)
 1. Authentication → tab **Users → Add user**:
    - Email: `device@smarthumidity.iot` (gì cũng được, miễn dạng email)
-   - Password: đặt mật khẩu mạnh — **GHI LẠI** (sẽ nạp vào ESP1 lúc provisioning).
+   - Password: đặt mật khẩu mạnh — **GHI LẠI** (điền vào `HC_DEV_EMAIL`/`HC_DEV_PASS` trong `esp1_main/main.cpp`).
 2. Sau khi tạo, dòng user hiện **User UID** → **copy** (đây là `DEVICE_UID`).
 
 ### B4. Tạo Realtime Database
@@ -78,8 +78,12 @@ export const firebaseConfig = {
 ```cpp
 #define FB_API_KEY      "AIza...."     // ← chính apiKey ở B5
 #define FB_DATABASE_URL "https://<PROJECT_ID>-default-rtdb.asia-southeast1.firebasedatabase.app/"
+// Tài khoản thiết bị (B3) — app không hỏi nữa nên điền sẵn ở đây:
+#define HC_DEV_EMAIL    "device@smarthumidity.iot"
+#define HC_DEV_PASS     "<mật khẩu thiết bị B3>"
 ```
-> WiFi + email/pass thiết bị KHÔNG hardcode — nạp qua provisioning. ESP2 không cần sửa gì.
+> **WiFi KHÔNG hardcode** theo nghĩa cấu hình được qua app (NVS-first); `HC_WIFI_*` chỉ là fallback
+> tiện dev. Email/pass thiết bị thì hardcode `HC_DEV_*` (app không hỏi). ESP2 chỉ cần khớp `HC_WIFI_SSID`.
 
 ---
 

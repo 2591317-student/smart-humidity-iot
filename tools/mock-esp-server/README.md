@@ -61,7 +61,8 @@ curl http://localhost:8080/info
 
 curl -X POST http://localhost:8080/provision \
   -H "Content-Type: application/json" \
-  -d '{"ssid":"TenWiFiNha","password":"matkhauwifi","deviceEmail":"device@project.iot","devicePassword":"123456","peerMac":"11:22:33:44:55:66","hset":70,"deadband":5}'
+  -d '{"ssid":"TenWiFiNha","password":"matkhauwifi","peerMac":"11:22:33:44:55:66"}'
+  # (mock vẫn chấp nhận field cũ deviceEmail/devicePassword/hset/deadband nếu gửi kèm — tương thích ngược)
 
 curl -X POST http://localhost:8080/reset
 ```

@@ -1,6 +1,6 @@
 # INDEX — Bản đồ tài liệu & trạng thái dự án
 
-Điểm vào duy nhất để cả nhóm định hướng. Cập nhật 2026-06-25.
+Điểm vào duy nhất để cả nhóm định hướng. Cập nhật 2026-07-02.
 
 ## Trạng thái (đã kiểm thử KHÔNG cần phần cứng)
 - 🌐 **Live:** Dashboard `https://smart-humidity-iot.web.app` · App cấu hình PWA `https://smart-humidity-iot-provision.web.app`
@@ -10,6 +10,15 @@
 - ✅ **Kênh ESP-NOW tự đồng bộ** (ESP2 quét SSID router) — không còn phụ thuộc kênh cố định.
 - 🟡 **Test rules** & **unit test Deadband**: đã viết đầy đủ; chạy cần **Java** (emulator) / **gcc host** (pio test) — xem bảng dưới.
 - ⏳ **Còn chờ bạn/đồng đội**: tạo Firebase project (cloud) + lắp & chạy phần cứng.
+
+### Cập nhật 2026-07-02 (đợt tinh chỉnh theo góp ý nhóm)
+- ✅ **Firmware NVS-first, hardcode-fallback** + vào provisioning bằng **giữ nút BOOT** (thay vì "chưa cấu hình"): nạp là chạy ngay khi dev, vẫn cấu hình lại được qua app.
+- ✅ **Tài khoản Firebase của thiết bị hardcode trong firmware** (`HC_DEV_EMAIL`/`HC_DEV_PASS`) — app không hỏi nữa.
+- ✅ **App gọn**: chỉ WiFi + MAC, có **2 checkbox (WiFi/MAC) gửi từng phần** + nút **test `/info`** (chẩn đoán) + trạng thái online. Firmware `POST /provision` hỗ trợ **partial update** (nhận cả `peerMac`/`mac_gateway`).
+- ✅ **Web phát hiện online/offline theo `lastSeen`** (timer client), **không** dựa cờ `esp1Online`, **không cần backend**.
+- ✅ **Gộp ghi Firebase**: `/sensor` + `/status` mỗi node 1 `setJSON` (2 request thay vì 9) → nhẹ tải ESP.
+- 📌 **Chốt hướng provisioning:** giữ **PWA tự viết** (SoftAP + REST), KHÔNG dùng app Espressif chính chủ.
+- ⏳ **Chưa nạp/deploy**: các thay đổi mới đang ở source — cần nạp firmware (qua USB, cần board) + `firebase deploy` (web+rules) + deploy lại PWA.
 
 ## Bản đồ thư mục
 | Đường dẫn | Nội dung |
@@ -25,6 +34,7 @@
 ## Tài liệu
 | File | Dành cho |
 |---|---|
+| [TIEN-DO-2026-07-02.md](TIEN-DO-2026-07-02.md) | ⭐ **Mới** — tóm tắt đã làm / cần làm thêm / vướng mắc đợt tinh chỉnh |
 | [NGHIEM-THU.md](NGHIEM-THU.md) | ⭐ Đối chiếu yêu cầu + kịch bản demo **chứng minh đã làm đúng** |
 | [CONTRACT.md](CONTRACT.md) | ⭐ Hợp đồng interface dùng chung — đọc trước khi sửa code |
 | [SETUP.md](SETUP.md) | Tạo Firebase project + deploy + seed UID (tóm tắt) |

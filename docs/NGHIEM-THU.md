@@ -13,7 +13,7 @@ Link live: **Dashboard** https://smart-humidity-iot.web.app · **App cấu hình
 |---|---|---|---|
 | 1 | **ESP2 (Sensor):** đọc SHT30 (I²C) → gửi ESP-NOW sang ESP1 | ✅ code đầy đủ, biên dịch OK | `firmware/src/esp2_sensor/main.cpp`; `pio run -e esp2-sensor` → SUCCESS |
 | 2 | **ESP1 (Main):** nhận ESP-NOW → WiFi sync `config` (Hₛₑₜ/Deadband) từ Firebase → thuật toán Deadband → relay | ✅ code đầy đủ, biên dịch OK, Deadband có unit-test | `firmware/src/esp1_main/main.cpp`; `pio run -e esp1-main` → SUCCESS; `pio test -e native` |
-| 3 | **Provisioning:** cả 2 ESP boot lần đầu cấu hình qua **Mobile App (REST/HTTP POST)**, lưu **MAC + WiFi** vào **Flash (Preferences)**, **không hardcode** | ✅ SoftAP + REST + Preferences | `firmware/lib/common/provisioning.cpp` (dòng 125–132 lưu ssid/pass/peerMac…); demo mục B4 |
+| 3 | **Provisioning:** giữ nút BOOT → cả 2 ESP cấu hình qua **Mobile App (REST/HTTP POST)**, lưu **WiFi + MAC** vào **Flash (Preferences)**, **WiFi không hardcode** (NVS-first, hardcode chỉ là fallback dev) | ✅ SoftAP + REST + Preferences | `firmware/lib/common/provisioning.cpp` (lưu ssid/pass/peerMac); demo mục B4 |
 | 4 | **Web Dashboard** trên Firebase Hosting | ✅ đã deploy | Mở https://smart-humidity-iot.web.app |
 | 5 | **Google Authentication (OAuth2)** — bắt buộc đăng nhập | ✅ | Trang bắt đăng nhập Google mới vào được |
 | 6 | **Security Rules** — chỉ Admin ghi `config`, người khác chỉ xem/bị chặn | ✅ + có test tự động | `firebase/database.rules.json`; `tests/rules/` (11 ca); demo mục B2 |
@@ -51,8 +51,8 @@ cd tools/mock-esp-server && npm install && npm start      # "ESP giả" ở http
 # terminal khác:
 cd mobile && python -m http.server 5173                   # mở http://localhost:5173
 ```
-Trên trang PWA → "Nhập tay" → bật **Chế độ Test** → điền WiFi + peerMac → **Gửi** →
-hiện **"✓ Saved. Rebooting."** và terminal mock **in ra cấu hình vừa nhận**. (Chứng minh #3: REST POST + no hardcode)
+Trên trang PWA → mở **Tuỳ chọn nâng cao** → bật **Chế độ Test** → điền **WiFi + MAC ESP còn lại** → **Gửi** →
+hiện **"✓ Saved. Rebooting."** và terminal mock **in ra cấu hình vừa nhận** (`ssid/password/peerMac`). (Chứng minh #3: REST POST + WiFi không hardcode)
 
 **B5 — Cảnh báo cạn nước:** injector định kỳ đặt `tank="empty"` → dashboard hiện **hộp đỏ nhấp nháy + bíp**. (Chứng minh #9)
 

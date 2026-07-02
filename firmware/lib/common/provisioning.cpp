@@ -104,32 +104,47 @@ void handleProvision() {
     return;
   }
 
-  // SSID là tối thiểu bắt buộc để thiết bị nối WiFi được.
-  String ssid = req["ssid"] | "";
-  if (ssid.length() == 0) {
+  // PARTIAL UPDATE (CONTRACT mục 5): chỉ ghi field CÓ trong JSON — khớp cơ chế
+  // "tick mới gửi" trên app. Field vắng mặt giữ nguyên giá trị đã lưu, KHÔNG bị xoá.
+  bool wrote = false;
+  prefs.begin(PREF_NS, false);  // read-write
+
+  // --- WiFi (ssid + password đi cùng nhau) ---
+  if (!req["ssid"].isNull()) {
+    String ssid = req["ssid"].as<String>();
+    if (ssid.length() == 0) {
+      prefs.end();
+      server.send(400, "application/json",
+                  "{\"ok\":false,\"message\":\"ssid rong\"}");
+      return;
+    }
+    prefs.putString("ssid", ssid);
+    prefs.putString("pass", req["password"] | "");  // mặc định rỗng (mạng mở)
+    wrote = true;
+  }
+
+  // --- MAC ESP còn lại: chấp nhận cả "peerMac" lẫn "mac_gateway" ---
+  if (!req["peerMac"].isNull() || !req["mac_gateway"].isNull()) {
+    String mac = !req["peerMac"].isNull() ? req["peerMac"].as<String>()
+                                          : req["mac_gateway"].as<String>();
+    prefs.putString("peerMac", mac);
+    wrote = true;
+  }
+
+  // --- (tương thích ngược) các field cũ nếu client vẫn gửi kèm ---
+  if (!req["deviceEmail"].isNull())    { prefs.putString("devEmail", req["deviceEmail"].as<String>()); wrote = true; }
+  if (!req["devicePassword"].isNull()) { prefs.putString("devPass",  req["devicePassword"].as<String>()); wrote = true; }
+  if (!req["hset"].isNull())     { prefs.putInt("hset",     req["hset"]     | 70); wrote = true; }
+  if (!req["deadband"].isNull()) { prefs.putInt("deadband", req["deadband"] | 5);  wrote = true; }
+
+  if (!wrote) {
+    prefs.end();
     server.send(400, "application/json",
-                "{\"ok\":false,\"message\":\"Thieu ssid\"}");
+                "{\"ok\":false,\"message\":\"Khong co truong nao de luu\"}");
     return;
   }
 
-  // Đọc các field (tên field JSON theo CONTRACT mục 5).
-  String pass     = req["password"]       | "";
-  String devEmail = req["deviceEmail"]    | "";
-  String devPass  = req["devicePassword"] | "";
-  String peerMac  = req["peerMac"]        | "";
-  int    hset     = req["hset"]           | 70;   // mặc định an toàn
-  int    deadband = req["deadband"]       | 5;
-
-  // Lưu vào Preferences theo đúng key trong CONTRACT mục 7.
-  prefs.begin(PREF_NS, false);  // read-write
-  prefs.putString("ssid",     ssid);
-  prefs.putString("pass",     pass);
-  prefs.putString("devEmail", devEmail);
-  prefs.putString("devPass",  devPass);
-  prefs.putString("peerMac",  peerMac);
-  prefs.putInt("hset",        hset);
-  prefs.putInt("deadband",    deadband);
-  prefs.putBool("provisioned", true);  // đặt cờ cuối cùng -> coi như cấu hình hợp lệ
+  prefs.putBool("provisioned", true);  // đã có cấu hình hợp lệ
   prefs.end();
 
   // Trả phản hồi thành công (CONTRACT mục 5).
@@ -187,20 +202,13 @@ void handleRoot() {
     "<form id=\"f\">"
     "<label>WiFi SSID *</label><input id=\"ssid\" required placeholder=\"Ten WiFi nha\">"
     "<label>WiFi Password</label><input id=\"password\" type=\"password\" placeholder=\"Mat khau WiFi\">"
-    "<label>Email tai khoan thiet bi</label><input id=\"deviceEmail\" placeholder=\"device@project.iot\">"
-    "<label>Password tai khoan thiet bi</label><input id=\"devicePassword\" type=\"password\">"
     "<label>MAC ESP con lai (peerMac)</label><input id=\"peerMac\" placeholder=\"11:22:33:44:55:66\">"
-    "<div class=\"row\"><div><label>Hset (%RH)</label>"
-    "<input id=\"hset\" type=\"number\" value=\"70\"></div>"
-    "<div><label>Deadband</label><input id=\"deadband\" type=\"number\" value=\"5\"></div></div>"
     "<button id=\"btn\" type=\"submit\">Luu &amp; khoi dong lai</button>"
     "</form><div id=\"msg\"></div></div>"
     "<script>"
     "const f=document.getElementById('f'),msg=document.getElementById('msg'),btn=document.getElementById('btn');"
     "f.addEventListener('submit',async(e)=>{e.preventDefault();"
-    "const body={ssid:ssid.value,password:password.value,deviceEmail:deviceEmail.value,"
-    "devicePassword:devicePassword.value,peerMac:peerMac.value,"
-    "hset:parseInt(hset.value||'70',10),deadband:parseInt(deadband.value||'5',10)};"
+    "const body={ssid:ssid.value,password:password.value,peerMac:peerMac.value};"
     "btn.disabled=true;msg.className='';msg.textContent='Dang luu...';"
     "try{const r=await fetch('/provision',{method:'POST',headers:{'Content-Type':'application/json'},"
     "body:JSON.stringify(body)});const j=await r.json();"
