@@ -26,9 +26,28 @@ Region khuyến nghị: **asia-southeast1** (Singapore). Mọi giá trị số l
     "humidity": 65.2,         // %RH, number
     "timestamp": 1719200000   // epoch giây (ESP dùng time(), hoặc 0 nếu chưa có NTP)
   },
-  "config": {                 // ADMIN (web) GHI — ESP1 đọc qua stream
+  "config": {                 // ADMIN (web) GHI — ESP1 đọc lại định kỳ ~10s (poll, không stream)
     "hset": 70,               // ngưỡng độ ẩm đặt (%RH)
     "deadband": 5,            // vùng chết (± quanh hset)
+    "mode": "continuous",     // CHẾ ĐỘ PHUN SƯƠNG — "off" | "continuous" | "intermittent".
+                              // "off": không phun (bỏ qua Deadband). "continuous": chạy đúng
+                              // thuật toán Deadband hiện tại (mục 2 dưới). "intermittent": phun
+                              // ngắt quãng — CHƯA hiện thực logic chi tiết phía firmware (chờ
+                              // Embed quyết định chu kỳ bật/tắt cụ thể). Mặc định "continuous"
+                              // nếu field thiếu (giữ hành vi hiện tại, không phá luồng cũ).
+    "onlineTimeoutSec": 15,   // NGƯỠNG WEB DÙNG để suy online/offline từ lastSeen (giây, 5..300).
+                              // ESP KHÔNG đọc field này — chỉ web dùng. Nên đặt > chu kỳ ESP đẩy
+                              // dữ liệu vài lần (ESP đẩy mỗi ~4s mặc định) để tránh báo offline giả.
+    "pumpControlEnabled": false, // CỜ ẨN — admin bật thẳng trong Firebase Console (không cần
+                                 // deploy lại web). true -> web HIỆN khối "Điều khiển bơm thủ
+                                 // công"; false (mặc định/thiếu) -> khối này ẩn hoàn toàn. Dùng để
+                                 // chuẩn bị sẵn UI phía web trong lúc chờ Embed hoàn thành mục
+                                 // "giám sát/điều khiển bơm" (phần cứng + firmware), bật lên khi sẵn sàng.
+    "pumpManualOn": false,       // Lệnh BẬT/TẮT bơm thủ công do admin gửi qua nút toggle trên web.
+                                 // ESP1 (khi Embed đã đấu relay bơm) đọc field này qua stream/poll
+                                 // /config, giống cách đọc hset/deadband, để điều khiển relay bơm.
+                                 // CHƯA hiện thực phía firmware — chờ Embed xong mục giám sát/điều
+                                 // khiển bơm rồi nối logic đọc field này vào relay tương ứng.
     "lastUpdate": "2026-06-24 10:00:00",  // string hiển thị
     "updatedBy": "admin@email"            // email người chỉnh
   },
@@ -54,13 +73,31 @@ Region khuyến nghị: **asia-southeast1** (Singapore). Mọi giá trị số l
 - `humidity > hset + deadband`  → TẮT phun (relay OFF) → `status/mist = false`
 - nằm giữa → giữ nguyên trạng thái (chống nhảy relay)
 
+> ⚠️ **`config/mode` CHƯA được firmware đọc** — hiện tại ESP1 luôn chạy Deadband như trên bất kể
+> `mode` là gì (web mới chỉ có UI + validate, chưa nối logic). Khi Embed sẵn sàng: `mode="off"` →
+> bỏ qua Deadband, luôn giữ relay TẮT; `mode="continuous"` → chạy đúng Deadband ở trên (mặc định);
+> `mode="intermittent"` → logic ngắt quãng do Embed tự định nghĩa (vd chu kỳ bật/tắt cố định).
+
 Map với giao diện cũ (tham khảo): `setHumidityMax = hset + deadband`, `setHumidityMin = hset - deadband`.
 Web NÊN cho nhập `hset` + `deadband` và hiển thị Max/Min suy ra để người dùng dễ hiểu.
 
 **Phát hiện online/offline (presence):** thiết bị không thể tự báo "offline" khi mất mạng, nên web
-**suy ra từ `lastSeen`**: `online = (giờ hiện tại − lastSeen) < ~15s`. Web chạy timer client tự lật
-sang "Mất kết nối" khi `lastSeen` quá hạn — **không cần backend/Cloud Functions**. Cờ `esp1Online`
-chỉ để tham khảo. (Nếu muốn chính cờ trong DB tự lật, dùng Firebase `onDisconnect()` phía ESP.)
+**suy ra từ `lastSeen`**: `online = (giờ hiện tại − lastSeen) < config.onlineTimeoutSec`. Ngưỡng này
+đọc từ `/config/onlineTimeoutSec` (admin chỉnh được trên web, mặc định 15s nếu chưa set) — để
+align với chu kỳ ESP đẩy dữ liệu (đổi chu kỳ push firmware thì chỉ cần sửa số này trên web, khỏi
+sửa code). Web chạy timer client (mỗi 5s) tự lật sang "Mất kết nối" khi `lastSeen` quá hạn —
+**không cần backend/Cloud Functions**. Cờ `esp1Online` chỉ để tham khảo.
+> ⚠️ Logic này chạy **trong trình duyệt người xem** — chỉ hoạt động khi có ai đó đang mở web dashboard.
+> Không ai mở web thì không có gì tính toán/cảnh báo online-offline (dữ liệu `lastSeen` vẫn được ghi
+> bình thường, chỉ là không ai suy ra trạng thái). Muốn cảnh báo dù không ai mở web (email/SMS...) thì
+> cần Cloud Functions chạy trên server — ngoài phạm vi hiện tại.
+>
+> **Cập nhật chính field `/status/esp1Online` kể cả khi không mở web:** dùng
+> `tools/presence-watcher` — 1 script Node chạy độc lập (không phải Cloud Functions, không cần
+> Blaze), đăng nhập bằng tài khoản thiết bị, tự ghi `esp1Online=false` khi `lastSeen` quá hạn. Lưu ý
+> thư viện Firebase mobizt trên ESP32 **không hỗ trợ `onDisconnect()`** (đã kiểm tra: không có trong
+> mã nguồn thư viện) nên ESP không tự làm được việc này — phải qua tool ngoài như trên. Tool này vẫn
+> cần một máy chạy nó liên tục (xem `tools/presence-watcher/README.md`).
 
 ---
 
@@ -123,6 +160,13 @@ Khi vào chế độ **SoftAP**:
 - SSID AP: `PROV-<ROLE>-<MAC6>` (vd `PROV-MAIN-A1B2C3`), không mật khẩu (hoặc pass mặc định `12345678`).
   **MAC6 = 6 ký tự hex CUỐI của MAC** (vd MAC `A0:B1:C2:A1:B2:C3` → MAC6 = `A1B2C3`).
 - IP cố định: `192.168.4.1`. ESP chạy HTTP server (cổng 80).
+- **Captive portal (DNSServer, mọi tên miền → IP ESP):** ngay sau khi điện thoại nối vào AP, hệ điều
+  hành (Android/iOS/Windows) tự dò mạng bằng vài URL cố định (`/generate_204`, `/hotspot-detect.html`,
+  `/ncsi.txt`...) — ESP redirect (302) TẤT CẢ về `http://192.168.4.1/`, khiến hệ điều hành hiểu là
+  "mạng có captive portal" và **tự bật trình duyệt** trỏ vào trang cấu hình. Người dùng KHÔNG cần tự
+  gõ IP hay mở app nào — và vì đây là HTTP thuần same-origin ngay từ đầu, **né hoàn toàn** vụ Local
+  Network Access / mixed-content của PWA (xem mục 5 phía dưới + `mobile/README.md`). Đây là đường
+  **khuyến nghị chính** cho demo; PWA (`mobile/`) vẫn giữ để quét QR lấy MAC cho tiện, không bắt buộc.
 
 ### Endpoints
 
@@ -164,9 +208,21 @@ Sau khi lưu Preferences thành công → trả response → `delay(1000)` → `
 
 > **CORS:** ESP server thêm header `Access-Control-Allow-Origin: *` và xử lý preflight `OPTIONS`
 > để PWA gọi được từ trình duyệt.
-> **Mixed-content:** PWA chạy HTTPS không POST thẳng được tới ESP HTTP. Cách dùng thật:
-> mở PWA qua `http://` (server local) HOẶC ESP tự phục vụ 1 trang form same-origin (`GET /`).
-> Khi test không có phần cứng → PWA trỏ tới `tools/mock-esp-server` (HTTP localhost) → chạy tốt.
+> **Mixed-content / Local Network Access:** PWA chạy HTTPS gọi ESP HTTP (`192.168.4.1`) có thể bị
+> chặn theo **2 cơ chế khác nhau** tuỳ trình duyệt:
+> - **Local Network Access (Chrome/Android mới)**: trình duyệt **hỏi quyền** ("truy cập thiết bị
+>   khác trên mạng cục bộ") — bấm **Allow** thì request VẪN chạy được dù trang là HTTPS. Lỗi thực tế
+>   gặp phải (2026-07-02, test bằng điện thoại thật): Android chặn hẳn hộp thoại xin quyền với thông
+>   báo *"This site can't ask for your permission — Close any bubbles or overlays"* vì có app khác
+>   (Messenger, launcher...) đang **vẽ đè lên màn hình** (`SYSTEM_ALERT_WINDOW`/"Hiển thị đè lên ứng
+>   dụng khác"). Fix: tắt quyền đó cho app đang chạy nền rồi thử lại; kiểm tra đã cấp quyền ở
+>   `Chrome Settings → Site settings → Local network`.
+> - **Mixed-content (trình duyệt cũ hơn)**: chặn thẳng, không có prompt xin quyền, không override được.
+>
+> Cách dùng thật (áp dụng cho cả 2 trường hợp trên): mở PWA qua `http://` (server local) HOẶC dùng
+> trang form do ESP tự phục vụ (`GET /`, same-origin — **không dính cả 2 lỗi trên**, khuyến nghị làm
+> phương án demo dự phòng chắc ăn). Khi test không có phần cứng → PWA trỏ tới `tools/mock-esp-server`
+> (HTTP localhost) → chạy tốt (localhost không bị 2 cơ chế trên chặn).
 
 `GET /` → trả 1 trang HTML form provisioning tối giản (same-origin fallback, luôn hoạt động).
 

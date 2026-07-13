@@ -6,6 +6,7 @@
 
 #include <WiFi.h>
 #include <WebServer.h>
+#include <DNSServer.h>     // captive portal — điều hướng mọi truy vấn DNS về ESP
 #include <Preferences.h>
 #include <ArduinoJson.h>   // bblanchon ArduinoJson v7
 
@@ -22,6 +23,7 @@ const IPAddress AP_GW(192, 168, 4, 1);
 const IPAddress AP_MASK(255, 255, 255, 0);
 
 WebServer  server(80);     // HTTP server cổng 80
+DNSServer  dnsServer;      // captive portal — xem beginAP()/handle()
 Preferences prefs;         // truy cập NVS
 
 bool   g_apMode    = false;    // đang ở chế độ SoftAP provisioning?
@@ -221,11 +223,26 @@ void handleRoot() {
   server.send(200, "text/html; charset=utf-8", html);
 }
 
-// 404 cho route không tồn tại (vẫn kèm CORS).
+// Route không khớp (vẫn kèm CORS).
+//   CAPTIVE PORTAL: các hệ điều hành (Android/iOS/Windows) sau khi nối vào 1 WiFi AP
+//   sẽ tự dò xem mạng "có Internet không" bằng cách gọi vài URL dò cố định (vd
+//   /generate_204, /hotspot-detect.html, /ncsi.txt...). Nếu response KHÔNG như mong
+//   đợi (ở đây ta trả 302 redirect thay vì response chuẩn) -> hệ điều hành hiểu là
+//   "mạng có captive portal" và TỰ ĐỘNG bật trình duyệt trỏ vào URL ta redirect tới.
+//   Nhờ vậy người dùng nối WiFi xong là trình duyệt tự bật lên trang cấu hình, KHỎI
+//   cần tự gõ địa chỉ IP hay mở app nào — né toàn bộ vụ Local Network Access/mixed-
+//   content của PWA (xem docs/CONTRACT.md, mobile/README.md) vì đây là HTTP thuần,
+//   same-origin ngay từ đầu.
 void handleNotFound() {
   // Trả CORS cho cả OPTIONS rơi vào đây.
   if (server.method() == HTTP_OPTIONS) {
     handleOptions();
+    return;
+  }
+  if (server.method() == HTTP_GET) {
+    server.sendHeader("Location", String("http://") + AP_IP.toString() + "/", true);
+    addCorsHeaders();
+    server.send(302, "text/plain", "");
     return;
   }
   addCorsHeaders();
@@ -283,6 +300,10 @@ void beginAP(const char* role) {
   WiFi.softAPConfig(AP_IP, AP_GW, AP_MASK);
   WiFi.softAP(g_apSsid.c_str());  // không truyền pass -> AP mở
 
+  // Captive portal: mọi tên miền client hỏi DNS đều trả về IP của ESP -> điện thoại
+  // tự nhận ra "mạng lạ" và tự bật trình duyệt (xem chi tiết ở handleNotFound()).
+  dnsServer.start(53, "*", AP_IP);
+
   // --- Đăng ký route HTTP ---
   server.on("/",          HTTP_GET,     handleRoot);
   server.on("/info",      HTTP_GET,     handleInfo);
@@ -321,7 +342,8 @@ void beginAP(const char* role) {
 void handle() {
   if (!g_apMode) return;
 
-  // Phục vụ HTTP client.
+  // Xử lý DNS captive portal + HTTP client.
+  dnsServer.processNextRequest();
   server.handleClient();
 
   // Nếu /provision đã yêu cầu reboot và đã tới hạn -> khởi động lại vào chế độ STA.

@@ -19,16 +19,6 @@
 <body class="antialiased">
 
   <!-- ====================================================================== -->
-  <!--  HỘP CẢNH BÁO CẠN NƯỚC (nổi trên cùng, nhấp nháy) — alarm.js điều khiển -->
-  <!-- ====================================================================== -->
-  <div id="alarmBox" hidden
-       class="fixed top-0 inset-x-0 z-50 px-4 py-4 text-center font-extrabold text-lg sm:text-xl shadow-2xl">
-    <span class="alarm-icon mr-2">⚠</span>
-    CẢNH BÁO CHỦ SỞ HỮU: BỒN CẠN NƯỚC - ĐANG TỰ ĐỘNG CHÂM
-    <span class="alarm-icon ml-2">⚠</span>
-  </div>
-
-  <!-- ====================================================================== -->
   <!--  MÀN HÌNH WELCOME (chưa đăng nhập)                                      -->
   <!-- ====================================================================== -->
   <main id="welcomeScreen" class="min-h-screen flex items-center justify-center px-4 fade-in">
@@ -59,34 +49,47 @@
   <!-- ====================================================================== -->
   <div id="dashboardScreen" hidden class="min-h-screen flex flex-col fade-in">
 
-    <!-- Header -->
-    <header class="glass sticky top-0 z-30 border-b border-white/10">
-      <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
-        <div class="flex items-center gap-3 min-w-0">
-          <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-sky-500 to-emerald-500 flex items-center justify-center text-xl shrink-0">💧</div>
-          <div class="min-w-0">
-            <h1 class="text-white font-bold leading-tight truncate">Smart Humidity IoT</h1>
-            <p class="text-xs text-slate-400 leading-tight">Dashboard giám sát &amp; điều khiển</p>
-          </div>
-        </div>
-
-        <div class="flex items-center gap-3">
-          <div class="hidden sm:flex flex-col items-end leading-tight">
-            <div class="flex items-center gap-2">
-              <span id="userName" class="text-white font-semibold text-sm truncate max-w-[160px]"></span>
-              <span id="adminBadge" class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-gray-500/20 text-gray-300"></span>
-            </div>
-            <span id="userEmail" class="text-xs text-slate-400 truncate max-w-[200px]"></span>
-          </div>
-          <img id="userAvatar" alt="avatar" referrerpolicy="no-referrer"
-               class="w-9 h-9 rounded-full border border-white/20 object-cover" hidden />
-          <button id="btnLogout"
-                  class="text-sm font-medium text-slate-200 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg px-3 py-2 transition-soft">
-            Đăng xuất
-          </button>
-        </div>
+    <!-- Thanh đầu trang DÍNH khi cuộn: gộp cảnh báo + header CHUNG 1 khối sticky, để
+         cảnh báo (khi bật) đẩy header xuống thay vì ĐÈ LÊN header (che mất avatar/nút
+         đăng xuất — bug cũ do #alarmBox "fixed" chồng z-index lên header "sticky"). -->
+    <div class="sticky top-0 z-30">
+      <!-- HỘP CẢNH BÁO CẠN NƯỚC (nhấp nháy) — alarm.js điều khiển, nằm TRONG flow -->
+      <div id="alarmBox" hidden
+           class="w-full px-4 py-4 text-center font-extrabold text-lg sm:text-xl shadow-2xl">
+        <span class="alarm-icon mr-2">⚠</span>
+        CẢNH BÁO CHỦ SỞ HỮU: BỒN CẠN NƯỚC - ĐANG TỰ ĐỘNG CHÂM
+        <span class="alarm-icon ml-2">⚠</span>
       </div>
-    </header>
+
+      <!-- Header -->
+      <header class="glass border-b border-white/10">
+        <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
+          <div class="flex items-center gap-3 min-w-0">
+            <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-sky-500 to-emerald-500 flex items-center justify-center text-xl shrink-0">💧</div>
+            <div class="min-w-0">
+              <h1 class="text-white font-bold leading-tight truncate">Smart Humidity IoT</h1>
+              <p class="text-xs text-slate-400 leading-tight">Dashboard giám sát &amp; điều khiển</p>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-3">
+            <div class="hidden sm:flex flex-col items-end leading-tight">
+              <div class="flex items-center gap-2">
+                <span id="userName" class="text-white font-semibold text-sm truncate max-w-[160px]"></span>
+                <span id="adminBadge" class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-gray-500/20 text-gray-300"></span>
+              </div>
+              <span id="userEmail" class="text-xs text-slate-400 truncate max-w-[200px]"></span>
+            </div>
+            <img id="userAvatar" alt="avatar" referrerpolicy="no-referrer"
+                 class="w-9 h-9 rounded-full border border-white/20 object-cover" hidden />
+            <button id="btnLogout"
+                    class="text-sm font-medium text-slate-200 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg px-3 py-2 transition-soft">
+              Đăng xuất
+            </button>
+          </div>
+        </div>
+      </header>
+    </div>
 
     <!-- Nội dung -->
     <div class="max-w-6xl mx-auto w-full px-4 py-6 flex-1 space-y-6">
@@ -141,6 +144,20 @@
             <span id="stGateway" class="px-3 py-1 rounded-full text-sm font-semibold bg-gray-600/30 text-gray-300 w-max">—</span>
           </div>
         </div>
+
+        <!-- Điều khiển bơm thủ công — ẨN mặc định, chỉ hiện khi admin bật cờ
+             /config/pumpControlEnabled = true thẳng trong Firebase Console (chờ phần
+             cứng đọc/điều khiển bơm xong). Không cần deploy lại web để bật/tắt tính năng. -->
+        <div id="pumpControlWrap" hidden class="mt-4 bg-amber-500/10 border border-amber-500/25 rounded-xl p-4 flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <p class="text-sm font-semibold text-amber-200">Điều khiển bơm thủ công</p>
+            <p class="text-xs text-amber-300/70">Ghi đè tạm thời — chỉ admin. Tắt cờ pumpControlEnabled trong Firebase để ẩn lại mục này.</p>
+          </div>
+          <button id="btnTogglePump" type="button"
+                  class="bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 font-semibold rounded-xl px-4 py-2 transition-soft disabled:opacity-50 disabled:cursor-not-allowed">
+            —
+          </button>
+        </div>
       </section>
 
       <!-- Biểu đồ realtime -->
@@ -161,27 +178,72 @@
         </div>
 
         <form id="configForm" class="space-y-5">
+          <!-- Chế độ phun sương — dropdown TỰ DỰNG (không dùng <select> gốc):
+               list mở ra của <select> gốc do hệ điều hành vẽ, nhiều máy Windows/Chrome
+               bỏ qua hết CSS (luôn ra nền trắng). Tự vẽ bằng div thì kiểm soát được 100%. -->
+          <div>
+            <label class="block text-sm text-slate-300 mb-1">Chế độ phun sương</label>
+            <div class="relative">
+              <button type="button" id="modeDropdownBtn"
+                      class="w-full bg-white/5 border border-white/15 rounded-xl px-4 py-3 text-left text-white focus:outline-none focus:ring-2 focus:ring-sky-500/60 flex items-center justify-between gap-2 disabled:opacity-60 disabled:cursor-not-allowed">
+                <span id="modeDropdownLabel">Liên tục (continuous)</span>
+                <span class="text-slate-400 text-xs">▾</span>
+              </button>
+              <ul id="modeDropdownList" hidden
+                  class="absolute z-20 left-0 right-0 mt-1 bg-[#0f172a] border border-white/15 rounded-xl overflow-hidden shadow-2xl">
+                <li data-value="off" class="px-4 py-2.5 text-white text-sm hover:bg-sky-500/20 cursor-pointer">Tắt (off)</li>
+                <li data-value="continuous" class="px-4 py-2.5 text-white text-sm hover:bg-sky-500/20 cursor-pointer">Liên tục (continuous)</li>
+                <li data-value="intermittent" class="px-4 py-2.5 text-white text-sm hover:bg-sky-500/20 cursor-pointer">Ngắt quãng (intermittent)</li>
+              </ul>
+            </div>
+            <!-- Giữ giá trị THẬT ở đây (ẩn) — app.js đọc/ghi els.cfgMode.value như cũ,
+                 không phải sửa lại logic renderConfig/submit. -->
+            <select id="inputMode" class="hidden" aria-hidden="true" tabindex="-1">
+              <option value="off">Tắt (off)</option>
+              <option value="continuous">Liên tục (continuous)</option>
+              <option value="intermittent">Ngắt quãng (intermittent)</option>
+            </select>
+            <p class="text-xs text-slate-500 mt-1">off: luôn tắt · continuous: chạy theo Deadband bên dưới · intermittent: phun ngắt quãng (chi tiết do firmware quyết định)</p>
+          </div>
+
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <!-- Hset -->
             <div>
               <label for="inputHset" class="block text-sm text-slate-300 mb-1">Ngưỡng độ ẩm đặt (Hₛₑₜ)</label>
-              <div class="relative">
+              <div class="flex items-stretch gap-2">
                 <input id="inputHset" type="number" min="0" max="100" step="1" value="70"
-                       class="w-full bg-white/5 border border-white/15 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-sky-500/60" />
-                <span class="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 text-sm">%RH</span>
+                       class="flex-1 min-w-0 bg-white/5 border border-white/15 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-sky-500/60" />
+                <span class="shrink-0 flex items-center text-slate-400 text-sm">%RH</span>
               </div>
               <p class="text-xs text-slate-500 mt-1">Khoảng hợp lệ: 0–100</p>
             </div>
             <!-- Deadband -->
             <div>
               <label for="inputDeadband" class="block text-sm text-slate-300 mb-1">Vùng chết (Deadband ±)</label>
-              <div class="relative">
+              <div class="flex items-stretch gap-2">
                 <input id="inputDeadband" type="number" min="0" max="50" step="1" value="5"
-                       class="w-full bg-white/5 border border-white/15 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-sky-500/60" />
-                <span class="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 text-sm">%RH</span>
+                       class="flex-1 min-w-0 bg-white/5 border border-white/15 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-sky-500/60" />
+                <span class="shrink-0 flex items-center text-slate-400 text-sm">%RH</span>
               </div>
               <p class="text-xs text-slate-500 mt-1">Khoảng hợp lệ: 0–50</p>
             </div>
+          </div>
+
+          <!-- Ngưỡng offline (align với chu kỳ ESP đẩy dữ liệu) -->
+          <div>
+            <label for="inputOnlineTimeout" class="block text-sm text-slate-300 mb-1">
+              Ngưỡng báo mất kết nối
+            </label>
+            <div class="flex items-stretch gap-2 max-w-xs">
+              <input id="inputOnlineTimeout" type="number" min="5" max="300" step="1" value="15"
+                     class="flex-1 min-w-0 bg-white/5 border border-white/15 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-sky-500/60" />
+              <span class="shrink-0 flex items-center text-slate-400 text-sm">giây</span>
+            </div>
+            <p class="text-xs text-slate-500 mt-1">
+              Không thấy ESP gửi dữ liệu quá số giây này thì web báo "Mất kết nối". Nên đặt lớn hơn
+              chu kỳ ESP đẩy dữ liệu (mặc định ~4s) vài lần — vd ESP đẩy mỗi 10s thì đặt ~20–30s.
+              Khoảng hợp lệ: 5–300.
+            </p>
           </div>
 
           <!-- Max / Min suy ra -->

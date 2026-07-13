@@ -27,7 +27,7 @@
 | `web/` | Dashboard (Google Auth, Chart.js, alarm) — Firebase Hosting |
 | `mobile/` | PWA provisioning (QR + REST) |
 | `firebase/` | `database.rules.json` (Security Rules) |
-| `tools/` | `mock-esp-server` (giả lập ESP), `data-injector` (bơm dữ liệu giả) |
+| `tools/` | `mock-esp-server` (giả lập ESP), `data-injector` (bơm dữ liệu giả), `presence-watcher` (tự cập nhật esp1Online kể cả khi không mở web) |
 | `tests/rules/` | Test tự động Security Rules (Firebase emulator) |
 | `firmware/test/` | Unit test Deadband (`pio test -e native`) |
 

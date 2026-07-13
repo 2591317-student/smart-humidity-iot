@@ -121,9 +121,26 @@ body {
 [hidden] { display: none !important; }
 
 /* --- Input ở chế độ chỉ-xem (không phải admin) --- */
-input:disabled {
+input:disabled,
+select:disabled {
   cursor: not-allowed;
   opacity: 0.6;
+}
+
+/* ----------------------------------------------------------------------------
+ *  <select> tối màu — Tailwind chỉ style được phần khung ĐÓNG của select;
+ *  danh sách lựa chọn khi MỞ ra dùng giao diện gốc hệ điều hành (nền trắng),
+ *  CSS thường không style tới được. Trình duyệt Chromium/Firefox là ngoại lệ:
+ *  chúng CÓ áp dụng background-color/color đặt trực tiếp trên <option> khi
+ *  render danh sách mở ra — nên style riêng ở đây để khớp theme tối.
+ * -------------------------------------------------------------------------- */
+select {
+  background-color: rgba(255, 255, 255, 0.05); /* khớp bg-white/5 của khung đóng */
+  color-scheme: dark; /* gợi ý trình duyệt vẽ mũi tên/scrollbar dropdown theo tông tối */
+}
+select option {
+  background-color: #0f172a; /* nền tối cho từng dòng lựa chọn khi mở ra */
+  color: #e2e8f0;
 }
 
 /* --- Spinner nhỏ khi đang xử lý --- */

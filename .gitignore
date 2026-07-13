@@ -16,6 +16,7 @@ database-debug.log*
 **/serviceAccountKey.json
 **/secrets.local.*
 tools/data-injector/config.js
+tools/presence-watcher/config.js
 
 # OS / editor
 .DS_Store

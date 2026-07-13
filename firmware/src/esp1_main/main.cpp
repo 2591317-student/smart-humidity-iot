@@ -4,7 +4,7 @@
 //  Vai trò (CONTRACT mục 1, role = "main"):
 //    - Nhận gói cảm biến (SensorPacket) từ ESP2 qua ESP-NOW.
 //    - Kết nối WiFi (STA) + đăng nhập Firebase bằng tài khoản THIẾT BỊ (email/pass).
-//    - Lắng nghe /config qua stream (hset, deadband do admin web chỉnh).
+//    - Đọc lại /config định kỳ ~10s (poll, KHÔNG stream — hset, deadband do admin web chỉnh).
 //    - Chạy thuật toán DEADBAND -> điều khiển relay máy phun sương (GPIO 26).
 //    - Đẩy /sensor (temperature, humidity, timestamp) và /status (mist, tank,
 //      pump, esp1Online, gateway, lastSeen) lên Firebase định kỳ ~4s.
@@ -18,7 +18,9 @@
 //
 //  Thư viện Firebase: "Firebase Arduino Client Library for ESP8266 and ESP32"
 //    của mobizt (Firebase_ESP_Client) v4.x — dùng FirebaseData / FirebaseAuth /
-//    FirebaseConfig, Firebase.begin(&config,&auth), Firebase.RTDB.* và stream.
+//    FirebaseConfig, Firebase.begin(&config,&auth), Firebase.RTDB.get/setJSON.
+//    CHỈ 1 FirebaseData (fbdo) dùng chung cho cả đọc /config lẫn ghi /sensor,/status
+//    (không dùng stream riêng nữa) để giảm số kết nối TLS đồng thời — chống tràn RAM.
 // ============================================================================
 
 #include <Arduino.h>
@@ -101,14 +103,23 @@ SET_LOOP_TASK_STACK_SIZE(16 * 1024);   // 16KB
 //  HẰNG SỐ THỜI GIAN / CHU KỲ.
 // ============================================================================
 static const uint32_t PUSH_INTERVAL_MS   = 4000;   // chu kỳ đẩy sensor/status (~4s)
+static const uint32_t CONFIG_POLL_INTERVAL_MS = 10000; // chu kỳ đọc lại /config (~10s, xem lý do dưới)
 static const uint32_t WIFI_RETRY_MS       = 5000;   // chu kỳ thử reconnect WiFi
 static const uint32_t SENSOR_STALE_MS     = 15000;  // quá lâu không có gói ESP-NOW -> coi cảm biến mất
 
 // ============================================================================
 //  ĐỐI TƯỢNG FIREBASE.
+//
+//  CHỈ 1 FirebaseData (KHÔNG dùng fbStream riêng cho /config nữa — xem pollConfig()):
+//  mỗi kết nối TLS (mbedTLS) tốn ~40-50KB RAM; giữ 2 kết nối đồng thời (1 stream lắng
+//  nghe /config liên tục + 1 để ghi /sensor,/status) là nguyên nhân chính gây cạn/tràn
+//  heap trên ESP32 khi chạy Firebase lâu dài. Đổi /config từ STREAM sang POLL định kỳ
+//  (đọc lại mỗi ~10s bằng CHÍNH fbdo đang dùng để ghi) giúp CHỈ CÒN 1 kết nối TLS tại
+//  1 thời điểm -> giảm ~nửa RAM cho phần Firebase. Đánh đổi: hset/deadband cập nhật
+//  trễ tối đa ~10s thay vì tức thời — chấp nhận được vì đây không phải giá trị cần
+//  phản ứng real-time (admin chỉnh ngưỡng độ ẩm, không phải lệnh khẩn cấp).
 // ============================================================================
-FirebaseData   fbdo;        // dùng cho các lệnh ghi (set*) thông thường
-FirebaseData   fbStream;    // RIÊNG cho stream /config (mobizt yêu cầu tách object)
+FirebaseData   fbdo;        // dùng chung cho ghi /sensor,/status VÀ đọc /config
 FirebaseAuth   auth;
 FirebaseConfig config;
 
@@ -138,7 +149,7 @@ uint32_t g_lastWifiTryMs   = 0;
 
 // --- Cờ Firebase đã khởi tạo ---
 bool g_fbInited      = false;
-bool g_streamStarted = false;
+uint32_t g_lastConfigPollMs = 0;  // mốc lần đọc /config gần nhất (xem pollConfig())
 
 // ============================================================================
 //  TIỆN ÍCH.
@@ -276,42 +287,28 @@ void setupEspNow() {
 }
 
 // ============================================================================
-//  STREAM /config — admin web chỉnh hset/deadband, ESP1 nhận realtime.
+//  POLL /config — admin web chỉnh hset/deadband, ESP1 đọc lại định kỳ (~10s).
+//  (Đổi từ stream sang poll để chỉ dùng 1 kết nối TLS — xem giải thích ở khai báo
+//  FirebaseData phía trên, phần chống tràn RAM.)
 // ============================================================================
-
-// Callback dữ liệu stream: gọi mỗi khi /config (hoặc node con) thay đổi.
-void onConfigStream(FirebaseStream data) {
-  // data.dataPath() là đường dẫn tương đối so với /config đang stream.
-  //   "/"         -> cả object config (lần đầu / khi set nguyên cụm)
-  //   "/hset"     -> chỉ hset đổi
-  //   "/deadband" -> chỉ deadband đổi
-  String path = data.dataPath();
-
-  if (path == "/" && data.dataType() == "json") {
-    // Cả object: parse JSON để lấy hset + deadband.
-    FirebaseJson* json = data.to<FirebaseJson*>();
-    FirebaseJsonData res;
-    if (json->get(res, "hset"))     g_hset     = res.to<float>();
-    if (json->get(res, "deadband")) g_deadband = res.to<float>();
-  } else if (path == "/hset") {
-    g_hset = data.to<float>();
-  } else if (path == "/deadband") {
-    g_deadband = data.to<float>();
+void pollConfig() {
+  if (!Firebase.RTDB.getJSON(&fbdo, "/config")) {
+    Serial.printf("[CONFIG] Doc /config loi: %s\n", fbdo.errorReason().c_str());
+    return;
   }
 
-  Serial.printf("[CONFIG] Cap nhat: hset=%.1f  deadband=%.1f  (path=%s)\n",
-                (float)g_hset, (float)g_deadband, path.c_str());
-}
+  // fbdo.to<FirebaseJson*>() — CÙNG API mà lib dùng cho FirebaseStream trước đây
+  // (data.to<FirebaseJson*>()), xác nhận qua addons/RTDBHelper.h của thư viện mobizt.
+  FirebaseJson* json = fbdo.to<FirebaseJson*>();
+  FirebaseJsonData res;
+  if (json->get(res, "hset"))     g_hset     = res.to<float>();
+  if (json->get(res, "deadband")) g_deadband = res.to<float>();
 
-// Callback báo timeout/khôi phục stream.
-void onConfigStreamTimeout(bool timeout) {
-  if (timeout) {
-    Serial.println(F("[CONFIG] Stream timeout — thu viện se tu ket noi lai."));
-  }
+  Serial.printf("[CONFIG] Da doc: hset=%.1f  deadband=%.1f\n", (float)g_hset, (float)g_deadband);
 }
 
 // ============================================================================
-//  FIREBASE — khởi tạo + bắt đầu stream.
+//  FIREBASE — khởi tạo (đăng nhập tài khoản thiết bị + cấu hình buffer).
 // ============================================================================
 void setupFirebase() {
   Serial.print(F("[FB] Firebase Client v"));
@@ -338,26 +335,12 @@ void setupFirebase() {
   // Bắt đầu Firebase.
   Firebase.begin(&config, &auth);
 
-  // Buffer/timeout cho stream (giá trị an toàn cho ESP32).
-  fbStream.setBSSLBufferSize(2048, 512);
-  fbStream.setResponseSize(2048);
+  // Buffer/timeout cho fbdo (giá trị an toàn cho ESP32).
   fbdo.setBSSLBufferSize(2048, 512);
   fbdo.setResponseSize(2048);
 
   g_fbInited = true;
   Serial.println(F("[FB] Da khoi tao Firebase (dang lay token...)."));
-}
-
-// Bắt đầu stream /config (gọi sau khi Firebase.ready() lần đầu).
-void startConfigStream() {
-  if (g_streamStarted) return;
-  if (!Firebase.RTDB.beginStream(&fbStream, "/config")) {
-    Serial.printf("[CONFIG] beginStream LOI: %s\n", fbStream.errorReason().c_str());
-    return;
-  }
-  Firebase.RTDB.setStreamCallback(&fbStream, onConfigStream, onConfigStreamTimeout);
-  g_streamStarted = true;
-  Serial.println(F("[CONFIG] Da bat stream /config."));
 }
 
 // ============================================================================
@@ -547,10 +530,13 @@ void loop() {
     if (g_mist) { g_mist = false; applyRelay(false); }
   }
 
-  // --- Khi Firebase sẵn sàng: bật stream /config (1 lần) + đẩy dữ liệu định kỳ ---
+  // --- Khi Firebase sẵn sàng: đọc lại /config định kỳ + đẩy dữ liệu định kỳ ---
   if (g_fbInited && Firebase.ready()) {
-    // Bắt đầu stream /config sau khi token sẵn sàng.
-    startConfigStream();
+    // Đọc lại /config mỗi ~10s (poll, không phải stream — xem lý do ở khai báo fbdo).
+    if (now - g_lastConfigPollMs >= CONFIG_POLL_INTERVAL_MS) {
+      g_lastConfigPollMs = now;
+      pollConfig();
+    }
 
     // Đẩy /sensor + /status mỗi ~4s.
     if (now - g_lastPushMs >= PUSH_INTERVAL_MS) {

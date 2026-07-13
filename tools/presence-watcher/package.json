@@ -1,0 +1,13 @@
+{
+  "name": "presence-watcher",
+  "version": "1.0.0",
+  "description": "Chạy nền, tự cập nhật /status/esp1Online = false khi ESP ngừng gửi lastSeen quá lâu (dù không ai mở web dashboard)",
+  "type": "module",
+  "main": "watcher.js",
+  "scripts": {
+    "start": "node watcher.js"
+  },
+  "dependencies": {
+    "firebase": "^10.12.2"
+  }
+}

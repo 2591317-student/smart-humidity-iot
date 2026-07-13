@@ -66,7 +66,8 @@ Nếu WiFi đã hardcode ở bước 2 khớp mạng thật thì ESP chạy luô
 cấu hình mạng qua app (giống thiết bị smart home):
 1. **GIỮ nút BOOT** rồi cấp nguồn/nhấn EN → ESP2 phát `PROV-SENSOR-xxxxxx`, ESP1 phát `PROV-MAIN-xxxxxx`
    (IP `192.168.4.1`). (Không giữ nút → ESP chạy bằng cấu hình đã lưu / hardcode.)
-2. Trên điện thoại: nối WiFi vào AP đó → mở **PWA provisioning** (hoặc mở thẳng `http://192.168.4.1/`).
+2. Trên điện thoại: nối WiFi vào AP đó → **trình duyệt tự bật lên trang cấu hình** (captive portal,
+   không cần mở app/gõ IP). Nếu không tự bật, mở thẳng `http://192.168.4.1/` hoặc dùng PWA (`mobile/`).
 3. Nhập (cho cả hai ESP giống nhau): **SSID + mật khẩu WiFi nhà + MAC của ESP còn lại** (gõ tay hoặc
    quét QR). Tài khoản Firebase và hset/deadband **không phải nhập** (đã hardcode / dùng mặc định).
 4. Bấm gửi → ESP lưu vào Flash (NVS) và tự khởi động lại vào chế độ chạy.
@@ -91,7 +92,8 @@ cấu hình mạng qua app (giống thiết bị smart home):
 | ESP1 **không nhận** gói ESP-NOW | Kênh lệch. Kiểm Serial ESP2 có dòng `Da do thay router ... o kenh N` không; đảm bảo ESP2 được provisioning **đúng SSID router** mà ESP1 đang nối. Để 2 board gần nhau khi test. |
 | SHT30 `khong tim thay cam bien` | Sai dây I²C / địa chỉ (phải `0x44`) / cấp nhầm 5V. Kiểm SDA21–SCL22, nguồn 3V3, GND chung. |
 | Firebase `Ghi /sensor loi` / permission | Tài khoản thiết bị **chưa seed** vào `/devices/<UID>=true`, hoặc sai `HC_DEV_EMAIL`/`HC_DEV_PASS` (bước 2b) — kiểm lại và nạp lại (xem [SETUP.md](SETUP.md) mục 5). |
-| ESP **reboot liên tục / crash** khi gửi Firebase (`Stack canary loopTask` / `Guru Meditation`) | TLS của Firebase ngốn RAM+stack. Firmware repo đã có `SET_LOOP_TASK_STACK_SIZE(16*1024)` + gộp push 2 request. Nếu vẫn crash: xem log `freeHeap` — tụt gần 0 → cạn/vỡ heap do mở 2 kết nối TLS (stream `/config` + ghi) → đổi stream sang **poll `/config`**; hoặc nâng stack lên 24KB. |
+| ESP **reboot liên tục / crash** khi gửi Firebase (`Stack canary loopTask` / `Guru Meditation`) | TLS của Firebase ngốn RAM+stack. Firmware repo đã có `SET_LOOP_TASK_STACK_SIZE(16*1024)` + gộp push 2 request + **đổi `/config` từ stream sang poll ~10s** (chỉ còn 1 kết nối TLS thay vì 2). Nếu vẫn crash: xem log `freeHeap` (in kèm mỗi lần đẩy) để biết còn bao nhiêu RAM; cân nhắc nâng stack lên 24KB. |
+| Nạp firmware báo lỗi **"Sketch too big" / tràn flash** | Firmware `esp1-main` nặng (Firebase + WiFi + TLS). Đã đổi `board_build.partitions = huge_app.csv` trong `platformio.ini` (bỏ vùng OTA thứ 2 không dùng, dồn ~3MB cho app) — build lại (`pio run -e esp1-main`) sẽ dùng partition mới. |
 | Relay **ngược** (bật khi đáng tắt) | Module relay active-LOW → đặt `#define RELAY_ACTIVE_HIGH 0` trong `esp1_main/main.cpp` rồi nạp lại. |
 | WiFi không nối được | Sai SSID/mật khẩu → sửa `HC_WIFI_*` rồi nạp lại, **hoặc** giữ BOOT lúc khởi động để provisioning lại qua app (bước 5). |
 | Web báo **“Mất kết nối”** | Web suy từ `lastSeen`: quá ~15s không cập nhật → offline. Nghĩa là ESP1 ngừng đẩy (chưa nối WiFi/Firebase, hoặc treo/crash); xem Serial ESP1. Nếu ESP chưa đồng bộ NTP (`lastSeen=0`) cũng bị coi là offline. |

@@ -85,20 +85,24 @@ pio device monitor                    # 115200, xem Serial
 `PROV-SENSOR-xxxxxx` / `PROV-MAIN-xxxxxx` (IP `192.168.4.1`) và in **QR JSON** ra Serial. Nếu không
 giữ nút, ESP chạy luôn bằng cấu hình đã lưu (hoặc hardcode fallback khi chưa provisioning).
 
-1. **ESP2 (sensor):** giữ BOOT → nối AP `PROV-SENSOR-...` → POST **`ssid`** (+ mật khẩu; MAC để trống
-   cũng được). Ghi lại **MAC ESP2** (có trong QR/Serial) để nạp cho ESP1.
-2. **ESP1 (main):** giữ BOOT → nối AP `PROV-MAIN-...` → POST **`ssid`, `password`, `peerMac` = MAC ESP2**.
-   (Tài khoản Firebase đã hardcode trong firmware; `hset`/`deadband` dùng mặc định, chỉnh sau qua web.)
+1. **ESP2 (sensor):** giữ BOOT → nối AP `PROV-SENSOR-...` → **điện thoại tự bật trình duyệt lên trang
+   cấu hình** (captive portal, xem CONTRACT mục 5) → POST **`ssid`** (+ mật khẩu; MAC để trống cũng
+   được). Ghi lại **MAC ESP2** (có trong QR/Serial) để nạp cho ESP1.
+2. **ESP1 (main):** giữ BOOT → nối AP `PROV-MAIN-...` → trình duyệt tự bật → POST **`ssid`, `password`,
+   `peerMac` = MAC ESP2**. (Tài khoản Firebase đã hardcode trong firmware; `hset`/`deadband` dùng mặc
+   định, chỉnh sau qua web.)
 3. Mỗi board sau khi nhận `{ok:true}` sẽ **reboot** vào chế độ chạy thật.
 
-> Mẹo: nếu không tiện mixed-content/PWA, mở thẳng `http://192.168.4.1/` trên điện thoại đã nối AP của
-> ESP — đó là trang form same-origin do ESP tự phục vụ (luôn chạy).
+> ⭐ **Không cần mở PWA/gõ IP nữa** — ESP chạy captive portal (giống WiFi khách sạn): nối AP xong là
+> trình duyệt tự bật đúng trang. Nếu máy nào không tự bật (hiếm, tuỳ hệ điều hành), mở thẳng
+> `http://192.168.4.1/` — same-origin, không dính mixed-content/Local Network Access. PWA (`mobile/`)
+> chỉ còn cần khi muốn quét QR lấy MAC cho tiện.
 
 ### B3. Vận hành
 
 - ESP2 đọc SHT30 mỗi ~5s, broadcast `SensorPacket` qua ESP-NOW (tự dò kênh router để trùng ESP1).
 - ESP1 nhận → chạy **Deadband** → điều khiển relay (GPIO 26) → đẩy `/sensor` + `/status` mỗi ~4s.
-- Web Dashboard hiển thị realtime; admin chỉnh `/config` → ESP1 nhận qua stream và áp ngay.
+- Web Dashboard hiển thị realtime; admin chỉnh `/config` → ESP1 đọc lại trong vòng ~10s (poll) và áp.
 - **Mô phỏng kích hoạt phun:** hà hơi/đặt khăn ẩm lên cảm biến để độ ẩm thay đổi vượt ngưỡng → quan
   sát relay đóng/mở và badge mist trên web đổi theo.
 
@@ -131,7 +135,7 @@ giữ nút, ESP chạy luôn bằng cấu hình đã lưu (hoặc hardcode fallb
 |---|---|---|
 | Giám sát nhiệt độ/độ ẩm realtime | SHT30 → ESP-NOW → ESP1 → Firebase → Web | 1, 2, 4, 5 |
 | Điều khiển tự động (phun sương theo ngưỡng) | Thuật toán Deadband trên ESP1 → relay | 3, 8 |
-| Cấu hình ngưỡng từ xa | Web ghi `/config` → stream xuống ESP1 | 7, 8 |
+| Cấu hình ngưỡng từ xa | Web ghi `/config` → ESP1 poll lại (~10s) | 7, 8 |
 | Phân quyền người dùng (admin / khách / người lạ) | Google Auth + Email Auth + Security Rules | 6, 7, 9 |
 | Cấu hình thiết bị tiện lợi (không hardcode WiFi) | PWA Provisioning (QR + REST SoftAP) | 10 |
 | Cảnh báo & an toàn nước *(nâng cao)* | `/status/tank`, `/status/pump` + alarm web | 11, 12 |

@@ -15,7 +15,7 @@ import { initAuth, loginWithGoogle, logout, watchAuth, describeAuthError } from 
 import {
   initDb, checkIsAdmin,
   listenSensor, listenStatus, listenConfig,
-  writeConfig
+  writeConfig, writePumpManual
 } from "./db.js";
 import { initChart, pushPoint, clearChart } from "./chart.js";
 import { initAlarm, armAudio, updateAlarm, disposeAlarm } from "./alarm.js";
@@ -54,12 +54,20 @@ const els = {
   stTank: $("stTank"),
   stPump: $("stPump"),
   stGateway: $("stGateway"),
+  // Điều khiển bơm thủ công (ẩn mặc định — chỉ hiện khi /config/pumpControlEnabled = true)
+  pumpControlWrap: $("pumpControlWrap"),
+  btnTogglePump: $("btnTogglePump"),
   // Chart
   chartCanvas: $("sensorChart"),
   // Config form
   cfgForm: $("configForm"),
+  cfgMode: $("inputMode"), // <select> ẩn — giữ giá trị thật, không hiện lên UI
+  modeBtn: $("modeDropdownBtn"),
+  modeLabel: $("modeDropdownLabel"),
+  modeList: $("modeDropdownList"),
   cfgHset: $("inputHset"),
   cfgDeadband: $("inputDeadband"),
+  cfgOnlineTimeout: $("inputOnlineTimeout"),
   cfgMax: $("derivedMax"),
   cfgMin: $("derivedMin"),
   cfgBtn: $("btnSaveConfig"),
@@ -74,6 +82,7 @@ const els = {
 // ---- Trạng thái runtime -----------------------------------------------------
 let isAdmin = false;
 let currentUser = null;
+let g_pumpManualOn = false;   // trạng thái /config/pumpManualOn hiện tại (để nút toggle biết lật sang gì)
 let unsub = [];          // danh sách hàm huỷ listener để dọn khi logout
 let chartReady = false;
 let audioArmed = false;
@@ -259,7 +268,8 @@ function attachListeners() {
 //  Lưu ý: dựa vào lastSeen (epoch giây từ NTP của ESP) so với đồng hồ trình duyệt.
 //  Cả hai thường đã đồng bộ NTP nên lệch không đáng kể; để ngưỡng rộng cho an toàn.
 // ============================================================================
-const ONLINE_TIMEOUT_S = 15;   // > chu kỳ đẩy (~4s); quá 15s coi như mất kết nối
+const ONLINE_TIMEOUT_DEFAULT_S = 15;  // fallback khi /config chưa có onlineTimeoutSec
+let g_onlineTimeoutSec = ONLINE_TIMEOUT_DEFAULT_S; // lấy từ /config — align với chu kỳ push firmware
 let g_lastStatus = null;       // /status gần nhất (để timer re-check)
 let g_onlineTimer = null;      // timer tự lật offline khi lastSeen quá hạn
 
@@ -268,7 +278,7 @@ function isDeviceOnline(st) {
   const lastSeen = Number(st.lastSeen) || 0;
   if (lastSeen <= 0) return false;              // chưa có NTP / chưa từng thấy heartbeat
   const nowSec = Math.floor(Date.now() / 1000);
-  return (nowSec - lastSeen) < ONLINE_TIMEOUT_S;
+  return (nowSec - lastSeen) < g_onlineTimeoutSec;
 }
 
 function renderOnline() {
@@ -317,22 +327,76 @@ function setBadge(el, on, opt) {
 // ============================================================================
 //  RENDER CẤU HÌNH (/config)
 // ============================================================================
+const VALID_MODES = ["off", "continuous", "intermittent"];
+const MODE_LABELS = {
+  off: "Tắt (off)",
+  continuous: "Liên tục (continuous)",
+  intermittent: "Ngắt quãng (intermittent)"
+};
+
+// Đặt giá trị mode + đồng bộ label hiển thị trên nút dropdown tự dựng.
+function setModeValue(mode) {
+  els.cfgMode.value = mode;
+  els.modeLabel.textContent = MODE_LABELS[mode] || mode;
+}
+
 function renderConfig(cfg) {
   const hset = typeof cfg.hset === "number" ? cfg.hset : 70;
   const deadband = typeof cfg.deadband === "number" ? cfg.deadband : 5;
+  const mode = VALID_MODES.includes(cfg.mode) ? cfg.mode : "continuous";
+  const onlineTimeout = typeof cfg.onlineTimeoutSec === "number" ? cfg.onlineTimeoutSec : ONLINE_TIMEOUT_DEFAULT_S;
+
+  // Ngưỡng offline dùng ngay (không chờ điều kiện "editing" bên dưới) — đây là giá trị
+  // isDeviceOnline() đọc mỗi lần timer re-check, cần cập nhật kể cả khi admin đang gõ form.
+  g_onlineTimeoutSec = onlineTimeout;
 
   // Nếu admin đang chỉnh BẤT KỲ field nào trong form thì KHÔNG ghi đè (tránh mất giá
   // trị đang gõ ở field còn lại khi /config cập nhật từ server). Chỉ cập nhật phần text.
   const editing = els.cfgForm.contains(document.activeElement);
   if (!editing) {
+    setModeValue(mode);
     els.cfgHset.value = hset;
     els.cfgDeadband.value = deadband;
+    els.cfgOnlineTimeout.value = onlineTimeout;
     updateDerived();
   }
 
   els.cfgLastUpdate.textContent = cfg.lastUpdate || "—";
   els.cfgUpdatedBy.textContent = cfg.updatedBy || "—";
+
+  // Điều khiển bơm thủ công — chỉ hiện khi admin bật cờ pumpControlEnabled thẳng trong
+  // Firebase Console (không cần deploy lại web để bật/tắt tính năng này).
+  g_pumpManualOn = cfg.pumpManualOn === true;
+  const pumpFeatureOn = cfg.pumpControlEnabled === true;
+  els.pumpControlWrap.hidden = !pumpFeatureOn;
+  if (pumpFeatureOn) {
+    els.btnTogglePump.textContent = g_pumpManualOn ? "Đang BẬT — bấm để tắt" : "Đang TẮT — bấm để bật";
+    els.btnTogglePump.disabled = !isAdmin;
+  }
 }
+
+// ============================================================================
+//  DROPDOWN "Chế độ phun sương" — tự dựng bằng div (xem ghi chú trong index.html
+//  vì <select> gốc trên nhiều máy Windows/Chrome vẫn ra nền trắng dù đã style CSS).
+// ============================================================================
+els.modeBtn.addEventListener("click", () => {
+  if (els.modeBtn.disabled) return;
+  els.modeList.hidden = !els.modeList.hidden;
+});
+
+els.modeList.querySelectorAll("li").forEach((li) => {
+  li.addEventListener("click", () => {
+    setModeValue(li.dataset.value);
+    els.modeList.hidden = true;
+  });
+});
+
+// Đóng dropdown khi click ra ngoài.
+document.addEventListener("click", (e) => {
+  if (!els.modeBtn.contains(e.target) && !els.modeList.contains(e.target)) {
+    els.modeList.hidden = true;
+  }
+});
 
 // Hiển thị Max = hset + deadband, Min = hset - deadband (suy ra).
 function updateDerived() {
@@ -356,17 +420,26 @@ function applyAdminMode(admin) {
   if (admin) {
     els.adminBadge.textContent = "Quản trị viên";
     els.adminBadge.className = "px-2.5 py-0.5 rounded-full text-xs font-semibold bg-green-500/20 text-green-300";
+    els.cfgMode.disabled = false;
+    els.modeBtn.disabled = false;
     els.cfgHset.disabled = false;
     els.cfgDeadband.disabled = false;
+    els.cfgOnlineTimeout.disabled = false;
     els.cfgBtn.disabled = false;
     els.cfgBtn.hidden = false;
     els.cfgReadonlyNote.hidden = true;
+    els.btnTogglePump.disabled = false;
   } else {
     els.adminBadge.textContent = "Khách (chỉ xem)";
     els.adminBadge.className = "px-2.5 py-0.5 rounded-full text-xs font-semibold bg-gray-500/20 text-gray-300";
+    els.cfgMode.disabled = true;
+    els.modeBtn.disabled = true;
+    els.modeList.hidden = true; // đóng dropdown nếu đang mở lúc bị hạ quyền
     els.cfgHset.disabled = true;
     els.cfgDeadband.disabled = true;
+    els.cfgOnlineTimeout.disabled = true;
     els.cfgBtn.disabled = true;
+    els.btnTogglePump.disabled = true;
     els.cfgBtn.hidden = true;
     els.cfgReadonlyNote.hidden = false;
   }
@@ -379,15 +452,23 @@ els.cfgForm.addEventListener("submit", async (e) => {
   e.preventDefault();
   if (!isAdmin) return; // chốt chặn an toàn (UI đã disable).
 
+  const mode = els.cfgMode.value;
   const hset = Number(els.cfgHset.value);
   const deadband = Number(els.cfgDeadband.value);
+  const onlineTimeoutSec = Number(els.cfgOnlineTimeout.value);
 
-  // Validate (0<=hset<=100, 0<=deadband<=50).
+  // Validate (0<=hset<=100, 0<=deadband<=50, 5<=onlineTimeoutSec<=300, mode hợp lệ — khớp rules).
+  if (!VALID_MODES.includes(mode)) {
+    return showCfgMsg("Chế độ phun sương không hợp lệ.", "error");
+  }
   if (!Number.isFinite(hset) || hset < 0 || hset > 100) {
     return showCfgMsg("Hset phải nằm trong khoảng 0–100 %RH.", "error");
   }
   if (!Number.isFinite(deadband) || deadband < 0 || deadband > 50) {
     return showCfgMsg("Deadband phải nằm trong khoảng 0–50 %RH.", "error");
+  }
+  if (!Number.isFinite(onlineTimeoutSec) || onlineTimeoutSec < 5 || onlineTimeoutSec > 300) {
+    return showCfgMsg("Ngưỡng offline phải nằm trong khoảng 5–300 giây.", "error");
   }
 
   els.cfgBtn.disabled = true;
@@ -395,7 +476,7 @@ els.cfgForm.addEventListener("submit", async (e) => {
   els.cfgBtn.textContent = "Đang lưu...";
 
   try {
-    await writeConfig({ hset, deadband }, currentUser ? currentUser.email : "");
+    await writeConfig({ mode, hset, deadband, onlineTimeoutSec }, currentUser ? currentUser.email : "");
     showCfgMsg("Đã lưu cấu hình thành công.", "ok");
   } catch (err) {
     if (err && err.code === "permission-denied") {
@@ -407,6 +488,30 @@ els.cfgForm.addEventListener("submit", async (e) => {
   } finally {
     els.cfgBtn.disabled = false;
     els.cfgBtn.textContent = oldLabel;
+  }
+});
+
+// ============================================================================
+//  TOGGLE BƠM THỦ CÔNG (chỉ hiện khi /config/pumpControlEnabled = true; chỉ admin).
+// ============================================================================
+els.btnTogglePump.addEventListener("click", async () => {
+  if (!isAdmin) return; // chốt chặn an toàn (nút đã disabled cho non-admin).
+
+  const nextOn = !g_pumpManualOn;
+  els.btnTogglePump.disabled = true;
+  const oldLabel = els.btnTogglePump.textContent;
+  els.btnTogglePump.textContent = "Đang gửi...";
+
+  try {
+    await writePumpManual(nextOn, currentUser ? currentUser.email : "");
+    // Không tự set g_pumpManualOn ở đây — chờ renderConfig() nhận lại từ onValue("/config")
+    // để đảm bảo UI luôn khớp giá trị THẬT trên Firebase (nguồn sự thật duy nhất).
+  } catch (err) {
+    console.error("[app] writePumpManual lỗi:", err);
+    alert("Lỗi điều khiển bơm: " + (err && err.message ? err.message : "không xác định."));
+  } finally {
+    els.btnTogglePump.disabled = !isAdmin;
+    if (els.btnTogglePump.textContent === "Đang gửi...") els.btnTogglePump.textContent = oldLabel;
   }
 });
 

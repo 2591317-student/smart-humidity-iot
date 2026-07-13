@@ -50,7 +50,7 @@ flowchart LR
     end
 
     ESP1 -->|WiFi/HTTPS<br/>ghi /sensor /status| RTDB
-    RTDB -->|stream /config| ESP1
+    RTDB -->|poll /config ~10s| ESP1
     WEB -->|onValue đọc /sensor /status /config| RTDB
     WEB -->|ghi /config nếu admin| RTDB
     AUTH -.kiểm tra.-> RULES
@@ -114,8 +114,9 @@ sequenceDiagram
     A->>A: đăng nhập Google → check /admins/<uid>
     A->>FB: set /config {hset, deadband, lastUpdate, updatedBy}
     Note over FB: Security Rules kiểm tra admins/<uid> === true
-    FB-->>M: stream("/config") đẩy giá trị mới
-    M->>M: cập nhật g_hset / g_deadband → áp ngay vào Deadband
+    M->>FB: getJSON("/config") mỗi ~10s (poll, không stream — chống tràn RAM)
+    FB-->>M: giá trị hset/deadband hiện tại
+    M->>M: cập nhật g_hset / g_deadband → áp vào Deadband (trễ tối đa ~10s)
 ```
 
 ### 2.3. Luồng provisioning (cấu hình WiFi lần đầu)
@@ -126,10 +127,10 @@ sequenceDiagram
     participant PWA as PWA / mock
     participant FB as Firebase
 
-    ESP->>ESP: GIỮ nút BOOT lúc khởi động → bật SoftAP "PROV-MAIN-xxxxxx" + HTTP :80
+    ESP->>ESP: GIỮ nút BOOT lúc khởi động → bật SoftAP "PROV-MAIN-xxxxxx" + HTTP :80 + DNS captive portal
     ESP->>ESP: in QR JSON {id,role,ap,ip,mac} ra Serial
-    PWA->>PWA: (tuỳ chọn) quét QR của ESP kia → lấy MAC điền sẵn
     PWA->>ESP: (người dùng nối WiFi vào AP của ESP)
+    ESP-->>PWA: captive portal tự bật trình duyệt vào trang cấu hình (hoặc mở PWA thủ công để quét QR lấy MAC)
     PWA->>ESP: POST /provision {ssid,password,peerMac}
     ESP->>ESP: lưu Preferences (NVS) + đặt provisioned=true
     ESP-->>PWA: {ok:true, message:"Saved. Rebooting.", mac}
@@ -172,6 +173,11 @@ Khi GIỮ nút **BOOT (GPIO0)** lúc khởi động, ESP bật SoftAP + HTTP ser
 Nếu không giữ nút, ESP chạy bằng cấu hình NVS đã lưu — hoặc **hardcode fallback** khi chưa từng
 provisioning (tiện cho DEV: nạp firmware là chạy ngay).
 
+**Captive portal:** ESP còn chạy `DNSServer` trả về IP của chính nó cho MỌI tên miền, và redirect
+(302) mọi request GET không khớp về `/`. Nhờ đó điện thoại **tự bật trình duyệt** ngay trang cấu
+hình ngay sau khi nối AP (giống WiFi khách sạn) — không cần mở PWA hay tự gõ IP, và né được hoàn
+toàn Local Network Access/mixed-content vì là HTTP same-origin từ đầu.
+
 | Method · Endpoint | Ý nghĩa |
 |---|---|
 | `GET /info` | `{id, role, mac, fw, provisioned}` |
@@ -197,7 +203,9 @@ nơi áp dụng **xác thực & phân quyền**.
 
 - **Cây dữ liệu** (CONTRACT mục 2): `/sensor`, `/config`, `/status`, `/admins/<uid>`,
   `/devices/<uid>`. Mọi giá trị số lưu dạng `number`; thời gian là epoch giây.
-- **Realtime:** ESP1 dùng **stream** lib mobizt để nhận `/config`; web dùng `onValue()` của Firebase
+- **Realtime:** ESP1 **poll** `/config` mỗi ~10s (getJSON, KHÔNG dùng stream — đổi để chỉ giữ 1 kết
+  nối TLS, chống tràn RAM khi chạy Firebase lâu dài; đánh đổi độ trễ tối đa ~10s, chấp nhận được vì
+  hset/deadband không phải giá trị cần phản ứng tức thời); web dùng `onValue()` của Firebase
   JS SDK v10.12.2 (modular ESM CDN).
 - **Auth & Rules** (CONTRACT mục 3, `firebase/database.rules.json`):
   - Chưa đăng nhập → `.read = false` (chặn hoàn toàn).
@@ -217,7 +225,7 @@ flowchart TD
     DEV["Thiết bị / data-injector<br/>(UID ∈ /devices)"] -->|ghi| sensor
     DEV -->|ghi| status
     ADM["Admin web<br/>(UID ∈ /admins)"] -->|ghi| config
-    config -->|stream| ESP1["ESP1"]
+    config -->|poll ~10s| ESP1["ESP1"]
     sensor -->|onValue| WEB["Web"]
     status -->|onValue| WEB
 ```
@@ -279,3 +287,8 @@ Cùng một logic được hiện thực ở 3 nơi (giữ nhất quán): firmwa
   thiên về dev (cần đọc QR/POP qua terminal); luồng "nối AP → gọi API" tự viết đơn giản & consumer hơn.
   Giới hạn đã biết: PWA (web) không đọc được SSID/IP điện thoại và không auto-connect WiFi (đó là khả
   năng của app native/SmartConfig) — nên có nút test `/info` để chẩn đoán thay thế.
+- **Chống tràn flash/RAM trên ESP1** (thư viện Firebase rất nặng): đổi `board_build.partitions` sang
+  `huge_app.csv` (bỏ vùng OTA thứ 2 không dùng tới, dồn ~3MB cho 1 vùng app duy nhất, tránh "Sketch
+  too big"); và đổi `/config` từ **stream** sang **poll ~10s** bằng CHÍNH `fbdo` đang dùng để ghi
+  `/sensor`,`/status` (bỏ `FirebaseData` riêng cho stream) — chỉ còn 1 kết nối TLS tại 1 thời điểm
+  thay vì 2, giảm ~nửa RAM cho phần Firebase. Đánh đổi: hset/deadband cập nhật trễ tối đa ~10s.

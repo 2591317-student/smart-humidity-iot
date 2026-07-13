@@ -238,13 +238,18 @@ function detectMixedContentRisk() {
 
   if (isHttps) {
     banner.innerHTML =
-      "<strong>Cảnh báo Mixed-content:</strong> Trang này đang chạy qua <code>https://</code> " +
-      "nên trình duyệt sẽ CHẶN gửi dữ liệu tới ESP qua <code>http://</code>. " +
-      "Cách khắc phục: <br>• Mở trang này qua <code>http://</code> (server local, ví dụ " +
-      "<code>http://localhost:5500</code> hoặc IP máy bạn), HOẶC <br>" +
-      "• Dùng trang form do chính ESP phục vụ (<code>GET http://" +
+      "<strong>Lưu ý khi chạy qua https://</strong> — gửi cấu hình tới ESP (<code>http://" +
       DEFAULT_IP +
-      "/</code>) — same-origin nên luôn chạy.";
+      "</code>) có thể bị chặn theo 1 trong 2 cách: <br>" +
+      "1. <b>Local Network Access (Android/Chrome mới)</b>: trình duyệt sẽ HỎI quyền " +
+      "\"truy cập thiết bị khác trên mạng cục bộ\" — nhớ bấm <b>Allow</b>. Nếu Android báo " +
+      "\"This site can't ask for your permission\" (do app khác đang vẽ đè màn hình) → vào " +
+      "Cài đặt → Ứng dụng, tắt quyền \"Hiển thị đè lên ứng dụng khác\" của app đang chạy nền " +
+      "(Messenger, launcher, v.v.) rồi thử lại. <br>" +
+      "2. <b>Mixed-content (trình duyệt cũ hơn)</b>: bị chặn thẳng, không có prompt xin quyền. <br>" +
+      "Chắc ăn nhất khi demo: mở thẳng <code>http://" +
+      DEFAULT_IP +
+      "/</code> (trang do chính ESP phục vụ, same-origin, không dính cả 2 lỗi trên).";
     show(banner);
   } else {
     hide(banner);
@@ -337,10 +342,12 @@ function handleFetchError(err, url) {
 
   if (isHttps) {
     lines.push(
-      "\nNguyên nhân nhiều khả năng: MIXED-CONTENT — trang HTTPS không gọi được http://. " +
-        "Hãy mở PWA qua http:// (server local) hoặc dùng trang form do ESP phục vụ (http://" +
-        DEFAULT_IP +
-        "/)."
+      "\nNguyên nhân nhiều khả năng (trang đang chạy https://):\n" +
+        "1. Local Network Access: trình duyệt cần xin quyền truy cập " + DEFAULT_IP +
+        " — kiểm tra có prompt \"Allow\" hiện ra không (trên Android có thể bị 1 app khác " +
+        "đang vẽ đè màn hình chặn mất prompt này — tắt app đó rồi thử lại).\n" +
+        "2. Mixed-content (trình duyệt cũ hơn): bị chặn thẳng, không xin quyền.\n" +
+        "Cách chắc ăn nhất: mở thẳng http://" + DEFAULT_IP + "/ (trang do ESP tự phục vụ, same-origin)."
     );
   } else {
     lines.push(

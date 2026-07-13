@@ -19,7 +19,7 @@ tầng kép và gateway dự phòng.
 
 - **ESP2 (Sensor Node):** đọc SHT30 qua I²C, gửi nhiệt độ/độ ẩm sang ESP1 bằng ESP-NOW.
 - **ESP1 (Main Node):** nhận ESP-NOW, kết nối WiFi, đăng nhập Firebase (tài khoản thiết bị),
-  lắng nghe `config` (Hₛₑₜ/Deadband) qua stream, chạy thuật toán Deadband điều khiển relay phun
+  đọc lại `config` (Hₛₑₜ/Deadband) định kỳ ~10s (poll, không stream), chạy thuật toán Deadband điều khiển relay phun
   sương, đẩy `sensor`/`status` lên Firebase.
 - **Firebase:** Realtime Database + Auth (Google cho admin, email/pass cho thiết bị) +
   Security Rules + Hosting.

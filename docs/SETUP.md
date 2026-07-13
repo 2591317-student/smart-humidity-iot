@@ -106,9 +106,10 @@ pio run -e esp2-sensor -t upload   # nạp ESP2
 pio run -e esp1-main   -t upload   # nạp ESP1
 pio device monitor                  # 115200
 ```
-ESP chạy ngay bằng WiFi hardcode (`HC_WIFI_*`) nếu chưa provisioning. Muốn cấu hình mạng qua app:
-**giữ nút BOOT lúc khởi động** → ESP phát WiFi `PROV-MAIN-xxxx` / `PROV-SENSOR-xxxx` → dùng PWA
-provisioning để nạp WiFi + MAC (xem `docs/CONTRACT.md` mục 5).
+ESP chạy ngay bằng WiFi hardcode (`HC_WIFI_*`) nếu chưa provisioning. Muốn cấu hình mạng: **giữ nút
+BOOT lúc khởi động** → ESP phát WiFi `PROV-MAIN-xxxx` / `PROV-SENSOR-xxxx` → nối vào là **trình duyệt
+tự bật lên trang cấu hình** (captive portal) để nạp WiFi + MAC, khỏi cần mở PWA (xem `docs/CONTRACT.md`
+mục 5).
 
 ---
 
