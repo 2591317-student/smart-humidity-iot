@@ -4,11 +4,15 @@
 //
 //  Cây dữ liệu (xem CONTRACT mục 2):
 //    /sensor  { temperature, humidity, timestamp }     ← thiết bị GHI, web ĐỌC
-//    /config  { hset, deadband, mode, onlineTimeoutSec, pumpControlEnabled, pumpManualOn,
-//               lastUpdate, updatedBy } ← admin GHI.
+//    /config  { hset, deadband, mode, pumpControlEnabled, pumpManualOn,
+//               lastUpdate, updatedBy } ← admin GHI, ESP1 ĐỌC (subscribe/poll).
 //               mode: "off"|"continuous"|"intermittent" (chế độ phun sương).
 //               pumpControlEnabled/pumpManualOn chỉ hiện trên web khi admin bật cờ
 //               pumpControlEnabled thẳng trong Firebase Console — xem CONTRACT.md.
+//    /webSettings { onlineTimeoutSec, lastUpdate, updatedBy } ← CHỈ web dùng (không
+//               liên quan gì tới ESP) — TÁCH RIÊNG khỏi /config vì ESP1 sẽ subscribe
+//               /config (tương tác 2 chiều với sensor node) và không cần biết field
+//               thuần hiển-thị này. Xem CONTRACT.md.
 //    /status  { mist, tank, pump, esp1Online, gateway, lastSeen } ← thiết bị GHI
 //    /admins/<uid> = true                               ← seed thủ công
 // ============================================================================
@@ -73,11 +77,18 @@ export function listenStatus(cb) {
   }, (err) => console.error("[db] listen /status lỗi:", err));
 }
 
-/** Lắng nghe /config → cb({hset, deadband, lastUpdate, updatedBy}) */
+/** Lắng nghe /config → cb({hset, deadband, mode, pumpControlEnabled, pumpManualOn, lastUpdate, updatedBy}) */
 export function listenConfig(cb) {
   return onValue(ref(db, "config"), (snap) => {
     cb(snap.val() || {});
   }, (err) => console.error("[db] listen /config lỗi:", err));
+}
+
+/** Lắng nghe /webSettings → cb({onlineTimeoutSec, lastUpdate, updatedBy}) — CHỈ web dùng, ESP không đọc. */
+export function listenWebSettings(cb) {
+  return onValue(ref(db, "webSettings"), (snap) => {
+    cb(snap.val() || {});
+  }, (err) => console.error("[db] listen /webSettings lỗi:", err));
 }
 
 /* --------------------------------------------------------------------------
@@ -89,7 +100,7 @@ const VALID_MODES = ["off", "continuous", "intermittent"];
 
 /**
  * Ghi cấu hình mới lên /config.
- * @param {{hset:number, deadband:number, onlineTimeoutSec?:number, mode?:string}} cfg
+ * @param {{hset:number, deadband:number, mode?:string}} cfg
  * @param {string} email  email người chỉnh (đưa vào updatedBy)
  */
 export async function writeConfig(cfg, email) {
@@ -98,16 +109,12 @@ export async function writeConfig(cfg, email) {
   // Validate phía client (rules cũng validate lại phía server).
   const hset = Number(cfg.hset);
   const deadband = Number(cfg.deadband);
-  const onlineTimeoutSec = Number.isFinite(Number(cfg.onlineTimeoutSec)) ? Number(cfg.onlineTimeoutSec) : 15;
   const mode = VALID_MODES.includes(cfg.mode) ? cfg.mode : "continuous";
   if (!Number.isFinite(hset) || hset < 0 || hset > 100) {
     throw new Error("Hset phải nằm trong khoảng 0–100 %RH.");
   }
   if (!Number.isFinite(deadband) || deadband < 0 || deadband > 50) {
     throw new Error("Deadband phải nằm trong khoảng 0–50 %RH.");
-  }
-  if (onlineTimeoutSec < 5 || onlineTimeoutSec > 300) {
-    throw new Error("Ngưỡng offline (onlineTimeoutSec) phải nằm trong khoảng 5–300 giây.");
   }
   if (!VALID_MODES.includes(mode)) {
     throw new Error("Chế độ phun sương phải là off, continuous hoặc intermittent.");
@@ -116,7 +123,6 @@ export async function writeConfig(cfg, email) {
   const payload = {
     hset,
     deadband,
-    onlineTimeoutSec,
     mode,
     lastUpdate: formatLocalTime(new Date()), // chuỗi giờ địa phương để hiển thị
     updatedBy: email || "unknown"
@@ -131,6 +137,39 @@ export async function writeConfig(cfg, email) {
     // Bắt riêng permission-denied để báo người dùng dễ hiểu.
     if (e && (e.code === "PERMISSION_DENIED" || /permission_denied|permission denied/i.test(String(e.message)))) {
       const err = new Error("Bạn không có quyền ghi cấu hình (chỉ admin được phép). UID của bạn cần được seed vào /admins.");
+      err.code = "permission-denied";
+      throw err;
+    }
+    throw e;
+  }
+}
+
+/**
+ * Ghi ngưỡng báo mất kết nối lên /webSettings (KHÔNG phải /config — field này chỉ web
+ * dùng để hiển thị, ESP không cần đọc). Vẫn giới hạn chỉ admin ghi được, cho gọn quyền.
+ * @param {number} onlineTimeoutSec
+ * @param {string} email
+ */
+export async function writeWebSettings(onlineTimeoutSec, email) {
+  if (!db) throw new Error("DB chưa khởi tạo.");
+
+  const val = Number(onlineTimeoutSec);
+  if (!Number.isFinite(val) || val < 5 || val > 300) {
+    throw new Error("Ngưỡng offline (onlineTimeoutSec) phải nằm trong khoảng 5–300 giây.");
+  }
+
+  const payload = {
+    onlineTimeoutSec: val,
+    lastUpdate: formatLocalTime(new Date()),
+    updatedBy: email || "unknown"
+  };
+
+  try {
+    await update(ref(db, "webSettings"), payload);
+    return payload;
+  } catch (e) {
+    if (e && (e.code === "PERMISSION_DENIED" || /permission_denied|permission denied/i.test(String(e.message)))) {
+      const err = new Error("Bạn không có quyền chỉnh cài đặt web (chỉ admin được phép).");
       err.code = "permission-denied";
       throw err;
     }

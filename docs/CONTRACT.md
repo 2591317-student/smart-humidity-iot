@@ -26,7 +26,10 @@ Region khuyến nghị: **asia-southeast1** (Singapore). Mọi giá trị số l
     "humidity": 65.2,         // %RH, number
     "timestamp": 1719200000   // epoch giây (ESP dùng time(), hoặc 0 nếu chưa có NTP)
   },
-  "config": {                 // ADMIN (web) GHI — ESP1 đọc lại định kỳ ~10s (poll, không stream)
+  "config": {                 // ADMIN (web) GHI — ESP1 ĐỌC (subscribe/poll) cho luồng 2 chiều
+                              // với sensor node. CHỈ chứa field mà ESP thật sự cần biết — field
+                              // thuần web-hiển-thị (vd onlineTimeoutSec) nằm ở /webSettings riêng,
+                              // KHÔNG để ở đây (ESP không cần/không nên biết những field đó).
     "hset": 70,               // ngưỡng độ ẩm đặt (%RH)
     "deadband": 5,            // vùng chết (± quanh hset)
     "mode": "continuous",     // CHẾ ĐỘ PHUN SƯƠNG — "off" | "continuous" | "intermittent".
@@ -35,21 +38,28 @@ Region khuyến nghị: **asia-southeast1** (Singapore). Mọi giá trị số l
                               // ngắt quãng — CHƯA hiện thực logic chi tiết phía firmware (chờ
                               // Embed quyết định chu kỳ bật/tắt cụ thể). Mặc định "continuous"
                               // nếu field thiếu (giữ hành vi hiện tại, không phá luồng cũ).
-    "onlineTimeoutSec": 15,   // NGƯỠNG WEB DÙNG để suy online/offline từ lastSeen (giây, 5..300).
-                              // ESP KHÔNG đọc field này — chỉ web dùng. Nên đặt > chu kỳ ESP đẩy
-                              // dữ liệu vài lần (ESP đẩy mỗi ~4s mặc định) để tránh báo offline giả.
     "pumpControlEnabled": false, // CỜ ẨN — admin bật thẳng trong Firebase Console (không cần
                                  // deploy lại web). true -> web HIỆN khối "Điều khiển bơm thủ
                                  // công"; false (mặc định/thiếu) -> khối này ẩn hoàn toàn. Dùng để
                                  // chuẩn bị sẵn UI phía web trong lúc chờ Embed hoàn thành mục
                                  // "giám sát/điều khiển bơm" (phần cứng + firmware), bật lên khi sẵn sàng.
     "pumpManualOn": false,       // Lệnh BẬT/TẮT bơm thủ công do admin gửi qua nút toggle trên web.
-                                 // ESP1 (khi Embed đã đấu relay bơm) đọc field này qua stream/poll
+                                 // ESP1 (khi Embed đã đấu relay bơm) đọc field này qua subscribe/poll
                                  // /config, giống cách đọc hset/deadband, để điều khiển relay bơm.
                                  // CHƯA hiện thực phía firmware — chờ Embed xong mục giám sát/điều
                                  // khiển bơm rồi nối logic đọc field này vào relay tương ứng.
     "lastUpdate": "2026-06-24 10:00:00",  // string hiển thị
     "updatedBy": "admin@email"            // email người chỉnh
+  },
+  "webSettings": {            // ADMIN (web) GHI — CHỈ WEB DÙNG, ESP KHÔNG ĐỌC/subscribe path này.
+                              // Tách riêng khỏi /config vì ESP1 sẽ subscribe /config cho luồng
+                              // tương tác 2 chiều với sensor node (nút vặn hset/deadband) — field
+                              // thuần hiển-thị không nên lẫn vào đó.
+    "onlineTimeoutSec": 15,   // NGƯỠNG WEB DÙNG để suy online/offline từ lastSeen (giây, 5..300).
+                              // Nên đặt > chu kỳ ESP đẩy /status vài lần (vd đẩy mỗi ~60s thì đặt
+                              // ~90-150s) để tránh báo offline giả dù ESP hoàn toàn khoẻ mạnh.
+    "lastUpdate": "2026-06-24 10:00:00",
+    "updatedBy": "admin@email"
   },
   "status": {                 // ESP1 GHI
     "mist": false,            // bool — máy phun đang bật?
@@ -82,11 +92,12 @@ Map với giao diện cũ (tham khảo): `setHumidityMax = hset + deadband`, `se
 Web NÊN cho nhập `hset` + `deadband` và hiển thị Max/Min suy ra để người dùng dễ hiểu.
 
 **Phát hiện online/offline (presence):** thiết bị không thể tự báo "offline" khi mất mạng, nên web
-**suy ra từ `lastSeen`**: `online = (giờ hiện tại − lastSeen) < config.onlineTimeoutSec`. Ngưỡng này
-đọc từ `/config/onlineTimeoutSec` (admin chỉnh được trên web, mặc định 15s nếu chưa set) — để
-align với chu kỳ ESP đẩy dữ liệu (đổi chu kỳ push firmware thì chỉ cần sửa số này trên web, khỏi
-sửa code). Web chạy timer client (mỗi 5s) tự lật sang "Mất kết nối" khi `lastSeen` quá hạn —
-**không cần backend/Cloud Functions**. Cờ `esp1Online` chỉ để tham khảo.
+**suy ra từ `lastSeen`**: `online = (giờ hiện tại − lastSeen) < webSettings.onlineTimeoutSec`. Ngưỡng
+này đọc từ **`/webSettings/onlineTimeoutSec`** (KHÔNG phải `/config` — xem lý do tách ở mục 2, admin
+chỉnh được trên web, mặc định 15s nếu chưa set) — để align với chu kỳ ESP đẩy dữ liệu (đổi chu kỳ
+push firmware thì chỉ cần sửa số này trên web, khỏi sửa code). Web chạy timer client (mỗi 5s) tự
+lật sang "Mất kết nối" khi `lastSeen` quá hạn — **không cần backend/Cloud Functions**. Cờ
+`esp1Online` chỉ để tham khảo.
 > ⚠️ Logic này chạy **trong trình duyệt người xem** — chỉ hoạt động khi có ai đó đang mở web dashboard.
 > Không ai mở web thì không có gì tính toán/cảnh báo online-offline (dữ liệu `lastSeen` vẫn được ghi
 > bình thường, chỉ là không ai suy ra trạng thái). Muốn cảnh báo dù không ai mở web (email/SMS...) thì

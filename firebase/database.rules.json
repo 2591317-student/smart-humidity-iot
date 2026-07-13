@@ -28,9 +28,16 @@
       "hset": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100" },
       "deadband": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 50" },
       "mode": { ".validate": "newData.isString() && (newData.val() == 'off' || newData.val() == 'continuous' || newData.val() == 'intermittent')" },
-      "onlineTimeoutSec": { ".validate": "newData.isNumber() && newData.val() >= 5 && newData.val() <= 300" },
       "pumpControlEnabled": { ".validate": "newData.isBoolean()" },
       "pumpManualOn": { ".validate": "newData.isBoolean()" },
+      "lastUpdate": { ".validate": "newData.isString()" },
+      "updatedBy": { ".validate": "newData.isString()" }
+    },
+
+    "webSettings": {
+      ".read": "auth != null",
+      ".write": "auth != null && root.child('admins').child(auth.uid).val() === true",
+      "onlineTimeoutSec": { ".validate": "newData.isNumber() && newData.val() >= 5 && newData.val() <= 300" },
       "lastUpdate": { ".validate": "newData.isString()" },
       "updatedBy": { ".validate": "newData.isString()" }
     },

@@ -14,8 +14,8 @@ database cũng luôn đúng — không cần Cloud Functions, không cần gói 
 
 1. Đăng nhập bằng **tài khoản thiết bị** (cùng tài khoản ESP1 dùng — email/password đã seed UID
    vào `/devices/<UID> = true`).
-2. Nghe realtime `/status/lastSeen` và `/config/onlineTimeoutSec` (dùng **cùng ngưỡng** admin đặt
-   trên web dashboard, đỡ phải cấu hình 2 nơi).
+2. Nghe realtime `/status/lastSeen` và `/webSettings/onlineTimeoutSec` (dùng **cùng ngưỡng** admin
+   đặt trên web dashboard, đỡ phải cấu hình 2 nơi — path này tách khỏi `/config` vì chỉ web dùng).
 3. Mỗi ~5s so `giờ hiện tại − lastSeen` với ngưỡng — nếu quá hạn, ghi `esp1Online: false`; khi ESP
    gửi lại dữ liệu (ESP tự ghi `esp1Online: true` mỗi lần đẩy), watcher tự phát hiện lại `true`.
 4. Chỉ ghi khi giá trị **thực sự đổi** — không spam Firebase mỗi vòng lặp.

@@ -229,7 +229,8 @@
             </div>
           </div>
 
-          <!-- Ngưỡng offline (align với chu kỳ ESP đẩy dữ liệu) -->
+          <!-- Ngưỡng offline — lưu ở /webSettings (KHÔNG phải /config): field này chỉ web
+               dùng để tính "Mất kết nối", ESP không cần đọc/subscribe field này. -->
           <div>
             <label for="inputOnlineTimeout" class="block text-sm text-slate-300 mb-1">
               Ngưỡng báo mất kết nối
@@ -241,7 +242,7 @@
             </div>
             <p class="text-xs text-slate-500 mt-1">
               Không thấy ESP gửi dữ liệu quá số giây này thì web báo "Mất kết nối". Nên đặt lớn hơn
-              chu kỳ ESP đẩy dữ liệu (mặc định ~4s) vài lần — vd ESP đẩy mỗi 10s thì đặt ~20–30s.
+              chu kỳ ESP đẩy `/status` vài lần — vd ESP đẩy mỗi ~60s thì đặt ~90–150s.
               Khoảng hợp lệ: 5–300.
             </p>
           </div>

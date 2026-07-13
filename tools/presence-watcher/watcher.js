@@ -45,11 +45,11 @@ try {
 
 // ---- Tham số ------------------------------------------------------------------
 const CHECK_INTERVAL_MS = 5000;      // chu kỳ kiểm tra lại (khớp timer bên web)
-const ONLINE_TIMEOUT_DEFAULT_S = 15; // fallback khi /config chưa có onlineTimeoutSec
+const ONLINE_TIMEOUT_DEFAULT_S = 15; // fallback khi /webSettings chưa có onlineTimeoutSec
 
 // Trạng thái theo dõi (cập nhật realtime qua onValue, không cần poll network liên tục).
 let lastSeen = 0;                            // /status/lastSeen mới nhất đã biết
-let onlineTimeoutSec = ONLINE_TIMEOUT_DEFAULT_S; // đọc từ /config/onlineTimeoutSec — CÙNG ngưỡng web dùng
+let onlineTimeoutSec = ONLINE_TIMEOUT_DEFAULT_S; // đọc từ /webSettings/onlineTimeoutSec — CÙNG ngưỡng web dùng
 let lastWrittenOnline = null;                // giá trị esp1Online watcher vừa ghi lần cuối (tránh ghi lặp)
 
 // ---- Khởi tạo Firebase ---------------------------------------------------------
@@ -79,8 +79,9 @@ async function main() {
     if (Number.isFinite(v) && v > 0) lastSeen = v;
   });
 
-  // Nghe /config/onlineTimeoutSec — dùng CÙNG ngưỡng admin đặt trên web (align, đỡ lệch nhau).
-  onValue(ref(db, 'config/onlineTimeoutSec'), (snap) => {
+  // Nghe /webSettings/onlineTimeoutSec — dùng CÙNG ngưỡng admin đặt trên web (align, đỡ lệch nhau).
+  // Path này TÁCH khỏi /config vì chỉ web dùng, ESP không cần subscribe field này.
+  onValue(ref(db, 'webSettings/onlineTimeoutSec'), (snap) => {
     const v = Number(snap.val());
     if (Number.isFinite(v) && v >= 5 && v <= 300) onlineTimeoutSec = v;
   });

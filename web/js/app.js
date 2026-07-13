@@ -14,8 +14,8 @@ import { firebaseConfig, FIREBASE_SDK_VERSION } from "./firebase-config.js";
 import { initAuth, loginWithGoogle, logout, watchAuth, describeAuthError } from "./auth.js";
 import {
   initDb, checkIsAdmin,
-  listenSensor, listenStatus, listenConfig,
-  writeConfig, writePumpManual
+  listenSensor, listenStatus, listenConfig, listenWebSettings,
+  writeConfig, writePumpManual, writeWebSettings
 } from "./db.js";
 import { initChart, pushPoint, clearChart } from "./chart.js";
 import { initAlarm, armAudio, updateAlarm, disposeAlarm } from "./alarm.js";
@@ -252,6 +252,11 @@ function attachListeners() {
   unsub.push(listenConfig((cfg) => {
     renderConfig(cfg);
   }));
+
+  // /webSettings — CHỈ web dùng (onlineTimeoutSec), tách khỏi /config vì ESP không cần biết.
+  unsub.push(listenWebSettings((ws) => {
+    renderWebSettings(ws);
+  }));
 }
 
 // ============================================================================
@@ -268,8 +273,8 @@ function attachListeners() {
 //  Lưu ý: dựa vào lastSeen (epoch giây từ NTP của ESP) so với đồng hồ trình duyệt.
 //  Cả hai thường đã đồng bộ NTP nên lệch không đáng kể; để ngưỡng rộng cho an toàn.
 // ============================================================================
-const ONLINE_TIMEOUT_DEFAULT_S = 15;  // fallback khi /config chưa có onlineTimeoutSec
-let g_onlineTimeoutSec = ONLINE_TIMEOUT_DEFAULT_S; // lấy từ /config — align với chu kỳ push firmware
+const ONLINE_TIMEOUT_DEFAULT_S = 15;  // fallback khi /webSettings chưa có onlineTimeoutSec
+let g_onlineTimeoutSec = ONLINE_TIMEOUT_DEFAULT_S; // lấy từ /webSettings — align với chu kỳ push firmware
 let g_lastStatus = null;       // /status gần nhất (để timer re-check)
 let g_onlineTimer = null;      // timer tự lật offline khi lastSeen quá hạn
 
@@ -344,11 +349,6 @@ function renderConfig(cfg) {
   const hset = typeof cfg.hset === "number" ? cfg.hset : 70;
   const deadband = typeof cfg.deadband === "number" ? cfg.deadband : 5;
   const mode = VALID_MODES.includes(cfg.mode) ? cfg.mode : "continuous";
-  const onlineTimeout = typeof cfg.onlineTimeoutSec === "number" ? cfg.onlineTimeoutSec : ONLINE_TIMEOUT_DEFAULT_S;
-
-  // Ngưỡng offline dùng ngay (không chờ điều kiện "editing" bên dưới) — đây là giá trị
-  // isDeviceOnline() đọc mỗi lần timer re-check, cần cập nhật kể cả khi admin đang gõ form.
-  g_onlineTimeoutSec = onlineTimeout;
 
   // Nếu admin đang chỉnh BẤT KỲ field nào trong form thì KHÔNG ghi đè (tránh mất giá
   // trị đang gõ ở field còn lại khi /config cập nhật từ server). Chỉ cập nhật phần text.
@@ -357,7 +357,6 @@ function renderConfig(cfg) {
     setModeValue(mode);
     els.cfgHset.value = hset;
     els.cfgDeadband.value = deadband;
-    els.cfgOnlineTimeout.value = onlineTimeout;
     updateDerived();
   }
 
@@ -372,6 +371,21 @@ function renderConfig(cfg) {
   if (pumpFeatureOn) {
     els.btnTogglePump.textContent = g_pumpManualOn ? "Đang BẬT — bấm để tắt" : "Đang TẮT — bấm để bật";
     els.btnTogglePump.disabled = !isAdmin;
+  }
+}
+
+// /webSettings — CHỈ web dùng (ngưỡng online), KHÔNG liên quan tới ESP nên tách khỏi /config
+// (ESP1 sẽ subscribe /config cho luồng 2 chiều với sensor node, không cần biết field này).
+function renderWebSettings(ws) {
+  const onlineTimeout = typeof ws.onlineTimeoutSec === "number" ? ws.onlineTimeoutSec : ONLINE_TIMEOUT_DEFAULT_S;
+
+  // Dùng ngay (không chờ "editing") — đây là giá trị isDeviceOnline() đọc mỗi lần timer
+  // re-check, cần cập nhật kể cả khi admin đang gõ dở field khác trong form.
+  g_onlineTimeoutSec = onlineTimeout;
+
+  const editing = els.cfgForm.contains(document.activeElement);
+  if (!editing) {
+    els.cfgOnlineTimeout.value = onlineTimeout;
   }
 }
 
@@ -476,7 +490,13 @@ els.cfgForm.addEventListener("submit", async (e) => {
   els.cfgBtn.textContent = "Đang lưu...";
 
   try {
-    await writeConfig({ mode, hset, deadband, onlineTimeoutSec }, currentUser ? currentUser.email : "");
+    // Ghi 2 path RIÊNG: /config (mode/hset/deadband — ESP1 đọc) và /webSettings
+    // (onlineTimeoutSec — chỉ web dùng). Cùng 1 form nhưng khác nguồn sự thật.
+    const email = currentUser ? currentUser.email : "";
+    await Promise.all([
+      writeConfig({ mode, hset, deadband }, email),
+      writeWebSettings(onlineTimeoutSec, email)
+    ]);
     showCfgMsg("Đã lưu cấu hình thành công.", "ok");
   } catch (err) {
     if (err && err.code === "permission-denied") {
