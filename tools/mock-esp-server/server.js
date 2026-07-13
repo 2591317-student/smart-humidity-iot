@@ -130,6 +130,34 @@ app.post('/provision', (req, res) => {
   });
 });
 
+// ---- GET /provision --------------------------------------------------------------
+// Đọc lại thông tin ĐÃ GHI qua POST /provision (mô phỏng đọc lại NVS). Không trả mật
+// khẩu WiFi thật, chỉ báo có/không (khớp firmware provisioning.cpp::handleGetProvision).
+app.get('/provision', (_req, res) => {
+  res.json({
+    ssid: (lastConfig && lastConfig.ssid) || '',
+    hasPassword: !!(lastConfig && lastConfig.password),
+    peerMac: (lastConfig && lastConfig.peerMac) || '',
+    provisioned,
+  });
+});
+
+// ---- POST /reboot --------------------------------------------------------------
+// Mô phỏng lệnh khởi động lại (CONTRACT mục 5). Không thật sự "reboot" gì (đây là
+// mock), chỉ log ra console + trả đúng response format để test luồng PWA.
+app.post('/reboot', (req, res) => {
+  const action = req.body && req.body.action;
+  if (action !== true) {
+    return res.status(400).json({
+      ok: false,
+      message: 'Thieu hoac sai truong action (can true)',
+      mac: DEVICE.macFull,
+    });
+  }
+  console.log('>> POST /reboot — (mo phong) thiet bi se khoi dong lai.\n');
+  res.json({ ok: true, message: 'Rebooting.', mac: DEVICE.macFull });
+});
+
 // ---- POST /reset ---------------------------------------------------------------
 // Xoá cấu hình, quay về trạng thái chưa provisioned (để demo lại).
 app.post('/reset', (_req, res) => {
@@ -164,6 +192,7 @@ app.listen(PORT, () => {
   console.log(`    GET  http://localhost:${PORT}/info`);
   console.log(`    POST http://localhost:${PORT}/provision`);
   console.log(`    POST http://localhost:${PORT}/reset`);
+  console.log(`    POST http://localhost:${PORT}/reboot`);
   console.log(`    GET  http://localhost:${PORT}/   (form HTML)`);
   console.log('-----------------------------------------------------');
 

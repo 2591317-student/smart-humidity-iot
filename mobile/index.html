@@ -188,6 +188,23 @@
             </p>
           </div>
 
+          <!-- ===== Khởi động lại thiết bị (POST /reboot) ===== -->
+          <div class="bg-red-50 border border-red-200 rounded-xl p-3 space-y-2">
+            <span class="text-sm font-medium text-red-700">Khởi động lại thiết bị</span>
+            <button
+              type="button"
+              id="btn-reboot"
+              class="w-full bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-xl py-2 transition"
+            >
+              Khởi động lại (POST /reboot)
+            </button>
+            <p id="reboot-status" class="hidden text-sm"></p>
+            <p class="text-[11px] text-slate-400 leading-snug">
+              Chỉ hoạt động khi ESP đang ở chế độ cấu hình (SoftAP). Thiết bị sẽ khởi động lại ngay,
+              mất kết nối AP trong vài giây.
+            </p>
+          </div>
+
           <!-- Tuỳ chọn nâng cao: IP + Chế độ Test -->
           <details class="bg-slate-50 border border-slate-200 rounded-xl p-3">
             <summary class="text-sm font-medium cursor-pointer">Tuỳ chọn nâng cao</summary>

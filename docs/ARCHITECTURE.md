@@ -183,7 +183,9 @@ toàn Local Network Access/mixed-content vì là HTTP same-origin từ đầu.
 | `GET /info` | `{id, role, mac, fw, provisioned}` |
 | `GET /` | trang HTML form same-origin (fallback luôn chạy) |
 | `POST /provision` | nhận JSON cấu hình → lưu Preferences → reboot |
+| `GET /provision` | đọc lại `{ssid, hasPassword, peerMac, provisioned}` đã lưu (không trả mật khẩu thật) |
 | `POST /reset` | xoá Preferences (demo lại) |
+| `POST /reboot` | `{action:true}` → khởi động lại ESP (chỉ khi đang ở SoftAP) |
 | `OPTIONS *` | preflight CORS (trả 204) |
 
 - **Body POST /provision** (CONTRACT mục 5, bản gọn): `{ ssid, password, peerMac }`.

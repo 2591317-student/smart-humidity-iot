@@ -215,7 +215,32 @@ Phản hồi:
 ```
 Sau khi lưu Preferences thành công → trả response → `delay(1000)` → `ESP.restart()` vào chế độ chạy bình thường (STA).
 
+> ⚠️ **PWA khoan dung với response lệch chuẩn:** đã gặp thực tế (2026-07-13) một board chạy firmware
+> khác/cũ hơn repo này trả `{"status":"ok", ...}` thay vì `{"ok":true, ...}` — PWA từng báo nhầm
+> "Thiết bị từ chối cấu hình" dù thiết bị đã lưu thành công. `mobile/js/app.js::onSubmitProvision`
+> giờ coi CẢ `bodyJson.ok === true` LẪN `bodyJson.status === "ok"` là thành công, để không phụ thuộc
+> hoàn toàn vào firmware đang chạy trên board thật đã khớp 100% chuẩn này chưa (xem "code phân kỳ"
+> trong `docs/TIEN-DO-2026-07-02.md`). Firmware trong repo vẫn PHẢI trả đúng `{"ok":true,...}` —
+> đây chỉ là lớp phòng thủ phía client, không phải đổi chuẩn.
+
+`GET /provision` → đọc lại thông tin **ĐÃ GHI** qua `POST /provision` (không cần xem Serial):
+```json
+{ "ssid": "TenWiFiNha", "hasPassword": true, "peerMac": "11:22:33:44:55:66", "provisioned": true }
+```
+Không trả mật khẩu WiFi thật (chỉ báo `hasPassword` có/không) để tránh lộ khi ai đó dò ra IP AP.
+
 `POST /reset` → xoá Preferences, quay về chưa cấu hình (tuỳ chọn, để demo lại).
+
+`POST /reboot` → khởi động lại ESP theo yêu cầu tường minh. Body:
+```json
+{ "action": true }
+```
+Thiếu field hoặc `action` không phải `true` → trả lỗi `400 {"ok":false,"message":"..."}`, KHÔNG reboot.
+`action: true` → trả `{"ok":true,"message":"Rebooting."}` rồi `ESP.restart()` sau ~1s (giống cơ chế
+`/provision`). ⚠️ Chỉ dùng được khi ESP đang ở **chế độ SoftAP provisioning** (giữ nút BOOT lúc khởi
+động) — server HTTP này KHÔNG chạy khi ESP đã vào chế độ STA bình thường (không có server nào lắng
+nghe lúc đó, đây là quyết định có chủ đích để không tốn thêm RAM lúc chạy thật — xem mục "Vướng mắc"
+trong `docs/TIEN-DO-2026-07-02.md`).
 
 > **CORS:** ESP server thêm header `Access-Control-Allow-Origin: *` và xử lý preflight `OPTIONS`
 > để PWA gọi được từ trình duyệt.

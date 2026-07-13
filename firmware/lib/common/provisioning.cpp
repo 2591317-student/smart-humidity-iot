@@ -164,6 +164,24 @@ void handleProvision() {
   g_rebootAt  = millis() + 1000;
 }
 
+// GET /provision -> đọc lại thông tin ĐÃ GHI qua POST /provision (CONTRACT mục 5).
+// Hữu ích để xác nhận đã lưu đúng SSID/peerMac mà KHÔNG cần xem Serial. KHÔNG trả mật
+// khẩu WiFi thật (chỉ báo "hasPassword" có/không) để tránh lộ khi ai đó dò IP.
+void handleGetProvision() {
+  ProvConfig cfg = Provisioning::load();
+
+  JsonDocument doc;
+  doc["ssid"]        = cfg.ssid;
+  doc["hasPassword"] = cfg.pass.length() > 0;
+  doc["peerMac"]     = cfg.peerMac;
+  doc["provisioned"] = Provisioning::isProvisioned();
+
+  String out;
+  serializeJson(doc, out);
+  addCorsHeaders();
+  server.send(200, "application/json", out);
+}
+
 // POST /reset -> xoá Preferences (quay về chưa cấu hình) để demo lại.
 void handleReset() {
   Provisioning::clear();
@@ -172,11 +190,39 @@ void handleReset() {
               "{\"ok\":true,\"message\":\"Da xoa cau hinh\"}");
 }
 
+// POST /reboot -> khởi động lại ESP theo yêu cầu tường minh (chỉ dùng được khi đang
+// ở chế độ SoftAP provisioning — server này không chạy lúc ESP đã vào chế độ STA bình
+// thường). Body: {"action": true}. Dùng CHUNG cơ chế hẹn giờ với /provision (trả
+// response trước, đợi ~1s cho kịp gửi xong rồi mới ESP.restart() trong handle()).
+void handleReboot() {
+  addCorsHeaders();
+
+  bool action = false;
+  if (server.hasArg("plain")) {
+    JsonDocument req;
+    if (deserializeJson(req, server.arg("plain")) == DeserializationError::Ok) {
+      action = req["action"] | false;
+    }
+  }
+
+  if (!action) {
+    server.send(400, "application/json",
+                "{\"ok\":false,\"message\":\"Thieu hoac sai truong action (can true)\"}");
+    return;
+  }
+
+  server.send(200, "application/json",
+              "{\"ok\":true,\"message\":\"Rebooting.\"}");
+
+  g_rebootReq = true;
+  g_rebootAt  = millis() + 1000;
+}
+
 // GET / -> trang HTML form provisioning tối giản (same-origin fallback luôn chạy được).
 void handleRoot() {
   // Form POST same-origin tới /provision bằng fetch JSON. UI tiếng Việt.
   String html;
-  html.reserve(3200);
+  html.reserve(3800);
   html += F(
     "<!DOCTYPE html><html lang=\"vi\"><head><meta charset=\"utf-8\">"
     "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
@@ -192,8 +238,10 @@ void handleRoot() {
     "color:#fff;font-size:15px;font-weight:600;cursor:pointer}"
     "button:disabled{opacity:.6;cursor:not-allowed}"
     ".row{display:flex;gap:10px}.row>div{flex:1}"
-    "#msg{margin-top:14px;font-size:14px;min-height:20px}"
+    "#msg,#remsg{margin-top:14px;font-size:14px;min-height:20px}"
     ".ok{color:#4ade80}.err{color:#f87171}"
+    "hr{border:0;border-top:1px solid #334155;margin:22px 0 4px}"
+    ".danger{background:#7f1d1d;margin-top:10px}"
     "</style></head><body><div class=\"wrap\">"
     "<h1>Cau hinh Smart Humidity</h1>"
     "<p class=\"sub\">Thiet bi: ");
@@ -206,7 +254,11 @@ void handleRoot() {
     "<label>WiFi Password</label><input id=\"password\" type=\"password\" placeholder=\"Mat khau WiFi\">"
     "<label>MAC ESP con lai (peerMac)</label><input id=\"peerMac\" placeholder=\"11:22:33:44:55:66\">"
     "<button id=\"btn\" type=\"submit\">Luu &amp; khoi dong lai</button>"
-    "</form><div id=\"msg\"></div></div>"
+    "</form><div id=\"msg\"></div>"
+    "<hr>"
+    "<button id=\"rebtn\" type=\"button\" class=\"danger\">Khoi dong lai thiet bi</button>"
+    "<div id=\"remsg\"></div>"
+    "</div>"
     "<script>"
     "const f=document.getElementById('f'),msg=document.getElementById('msg'),btn=document.getElementById('btn');"
     "f.addEventListener('submit',async(e)=>{e.preventDefault();"
@@ -217,6 +269,15 @@ void handleRoot() {
     "if(j.ok){msg.className='ok';msg.textContent='Da luu! Thiet bi dang khoi dong lai ('+j.mac+').';}"
     "else{msg.className='err';msg.textContent='Loi: '+(j.message||'khong xac dinh');btn.disabled=false;}"
     "}catch(err){msg.className='err';msg.textContent='Khong gui duoc: '+err;btn.disabled=false;}});"
+    "const rebtn=document.getElementById('rebtn'),remsg=document.getElementById('remsg');"
+    "rebtn.addEventListener('click',async()=>{"
+    "if(!confirm('Khoi dong lai thiet bi ngay bay gio?'))return;"
+    "rebtn.disabled=true;remsg.className='';remsg.textContent='Dang gui lenh...';"
+    "try{const r=await fetch('/reboot',{method:'POST',headers:{'Content-Type':'application/json'},"
+    "body:JSON.stringify({action:true})});const j=await r.json();"
+    "if(j.ok){remsg.className='ok';remsg.textContent='Da gui! Thiet bi dang khoi dong lai.';}"
+    "else{remsg.className='err';remsg.textContent='Loi: '+(j.message||'khong xac dinh');rebtn.disabled=false;}"
+    "}catch(err){remsg.className='err';remsg.textContent='Khong gui duoc: '+err;rebtn.disabled=false;}});"
     "</script></body></html>");
 
   addCorsHeaders();
@@ -308,9 +369,12 @@ void beginAP(const char* role) {
   server.on("/",          HTTP_GET,     handleRoot);
   server.on("/info",      HTTP_GET,     handleInfo);
   server.on("/provision", HTTP_POST,    handleProvision);
+  server.on("/provision", HTTP_GET,     handleGetProvision);   // đọc lại thông tin đã ghi
   server.on("/provision", HTTP_OPTIONS, handleOptions);  // preflight
   server.on("/reset",     HTTP_POST,    handleReset);
   server.on("/reset",     HTTP_OPTIONS, handleOptions);   // preflight
+  server.on("/reboot",    HTTP_POST,    handleReboot);
+  server.on("/reboot",    HTTP_OPTIONS, handleOptions);   // preflight
   server.on("/info",      HTTP_OPTIONS, handleOptions);   // preflight
   server.onNotFound(handleNotFound);
   server.begin();

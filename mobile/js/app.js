@@ -59,6 +59,9 @@ function bindEvents() {
   // --- Nút chẩn đoán: gọi GET /info của ESP ---
   $("#btn-test-info").addEventListener("click", testDeviceInfo);
 
+  // --- Nút khởi động lại: gọi POST /reboot của ESP ---
+  $("#btn-reboot").addEventListener("click", onClickReboot);
+
   // --- Toggle Chế độ Test (mock server) ---
   $("#test-mode").addEventListener("change", () => {
     updateTargetPreview();
@@ -192,30 +195,46 @@ function updateNetStatus() {
 }
 
 // ---------------------------------------------------------------------------
-// Chẩn đoán: gọi GET /info của ESP → xác nhận tới được thiết bị + hiện danh tính.
+// Chẩn đoán: gọi GET /info (danh tính) + GET /provision (cấu hình ĐÃ LƯU — SSID,
+// peerMac, có mật khẩu chưa) của ESP → xác nhận tới được thiết bị + xem lại đã lưu
+// đúng chưa mà không cần xem Serial (CONTRACT mục 5).
 // ---------------------------------------------------------------------------
+async function fetchJsonSafe(url) {
+  const resp = await fetch(url, { method: "GET" });
+  const text = await resp.text();
+  let json = null;
+  try { json = JSON.parse(text); } catch (_) {}
+  return { ok: resp.ok, json, text };
+}
+
 async function testDeviceInfo() {
   const btn = $("#btn-test-info");
   const out = $("#info-result");
-  const url = getTargetBase() + "/info";
+  const base = getTargetBase();
   const oldLabel = btn.textContent;
   btn.disabled = true;
   btn.textContent = "Đang kiểm tra…";
   try {
-    const resp = await fetch(url, { method: "GET" });
-    const text = await resp.text();
-    let pretty = text;
+    const info = await fetchJsonSafe(base + "/info");
+    let pretty = "Danh tính (GET /info):\n" + (info.json ? JSON.stringify(info.json, null, 2) : info.text);
+
+    // GET /provision không bắt buộc phải có (firmware cũ/mock có thể chưa hỗ trợ) — lỗi ở
+    // đây KHÔNG làm hỏng kết quả /info đã lấy được ở trên.
     try {
-      pretty = JSON.stringify(JSON.parse(text), null, 2);
+      const prov = await fetchJsonSafe(base + "/provision");
+      if (prov.ok && prov.json) {
+        pretty += "\n\nCấu hình đã lưu (GET /provision):\n" + JSON.stringify(prov.json, null, 2);
+      }
     } catch (_) {}
-    out.textContent = "✓ Tới được " + url + "\n\n" + pretty;
+
+    out.textContent = "✓ Tới được " + base + "\n\n" + pretty;
     out.className =
       "bg-slate-900 text-emerald-300 text-xs rounded-lg p-3 overflow-x-auto whitespace-pre-wrap break-words";
     show(out);
   } catch (err) {
     const isHttps = location.protocol === "https:";
     out.textContent =
-      "✕ Không tới được " + url + "\nLỗi: " + (err && err.message ? err.message : err) +
+      "✕ Không tới được " + base + "\nLỗi: " + (err && err.message ? err.message : err) +
       (isHttps
         ? "\n\nCó thể do mixed-content (trang HTTPS gọi http://). Mở app qua http://."
         : "\n\nKiểm tra: điện thoại đã nối AP của ESP chưa? IP đúng chưa? (mặc định 192.168.4.1)");
@@ -225,6 +244,51 @@ async function testDeviceInfo() {
   } finally {
     btn.disabled = false;
     btn.textContent = oldLabel;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Khởi động lại: gọi POST /reboot {action:true} của ESP (CONTRACT mục 5).
+// Chỉ hoạt động khi ESP đang ở chế độ SoftAP — hỏi xác nhận trước khi gửi vì
+// đây là hành động không hoàn tác (ESP mất kết nối AP vài giây rồi khởi động lại).
+// ---------------------------------------------------------------------------
+async function onClickReboot() {
+  if (!confirm("Khởi động lại thiết bị ngay bây giờ?")) return;
+
+  const btn = $("#btn-reboot");
+  const out = $("#reboot-status");
+  const url = getTargetBase() + "/reboot";
+  const oldLabel = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "Đang gửi lệnh…";
+
+  try {
+    const resp = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: true }),
+    });
+    let bodyJson = null;
+    try {
+      bodyJson = JSON.parse(await resp.text());
+    } catch (_) {}
+
+    if (resp.ok && bodyJson && bodyJson.ok === true) {
+      out.textContent = "✓ " + (bodyJson.message || "Đang khởi động lại…");
+      out.className = "text-sm text-emerald-600";
+    } else {
+      const detail = (bodyJson && bodyJson.message) || "HTTP " + resp.status + " " + resp.statusText;
+      out.textContent = "✕ " + detail;
+      out.className = "text-sm text-red-600";
+      btn.disabled = false;
+    }
+  } catch (err) {
+    out.textContent = "✕ Không gửi được lệnh: " + (err && err.message ? err.message : err);
+    out.className = "text-sm text-red-600";
+    btn.disabled = false;
+  } finally {
+    show(out);
+    if (btn.textContent === "Đang gửi lệnh…") btn.textContent = oldLabel;
   }
 }
 
@@ -311,7 +375,13 @@ async function onSubmitProvision(ev) {
       // body không phải JSON — giữ bodyText
     }
 
-    if (resp.ok && bodyJson && bodyJson.ok === true) {
+    // Chuẩn CONTRACT là {ok:true,...}, nhưng một số firmware/board thực tế (bản cũ hơn,
+    // "code phân kỳ" — xem docs/TIEN-DO-2026-07-02.md) chỉ trả {status:"ok"}. Chấp nhận
+    // cả 2 kiểu để không báo "từ chối" oan khi thiết bị thật ra đã lưu thành công.
+    const isSuccess =
+      resp.ok && bodyJson && (bodyJson.ok === true || bodyJson.status === "ok");
+
+    if (isSuccess) {
       const msg = bodyJson.message || "Đã lưu cấu hình. Thiết bị sẽ khởi động lại.";
       const macInfo = bodyJson.mac ? "\nMAC thiết bị: " + bodyJson.mac : "";
       showResult(true, "Cấu hình thành công!", msg + macInfo, bodyJson);
