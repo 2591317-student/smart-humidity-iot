@@ -7,7 +7,9 @@
  *   - /status : { mist, tank, pump, esp1Online, gateway, lastSeen }
  *
  * Thuật toán mist mô phỏng đúng Deadband trong CONTRACT mục 2 (đọc /config nếu có,
- * không thì dùng mặc định hset=70, deadband=5).
+ * không thì dùng mặc định hset=70, deadband=5). Có đọc thêm /config/mode:
+ * "off" -> luôn tắt; "continuous"/"intermittent" -> chạy Deadband (intermittent
+ * chưa có đặc tả riêng, chờ Embed quyết định chu kỳ bật/tắt cụ thể).
  *
  * Tuân theo CONTRACT.md:
  *   - Mục 2 — data model (/sensor, /config, /status), thuật toán Deadband
@@ -42,6 +44,7 @@ try {
 const INTERVAL_MS = 3000;          // chu kỳ ghi (~3s, theo yêu cầu)
 const HSET_DEFAULT = 70;           // mặc định an toàn (CONTRACT mục 10)
 const DEADBAND_DEFAULT = 5;
+const VALID_MODES = ['off', 'continuous', 'intermittent'];
 
 // Trạng thái mô phỏng (giữ giữa các vòng lặp để dao động "thực tế").
 let humidity = 62;                 // %RH khởi điểm
@@ -54,6 +57,7 @@ let tick = 0;                      // đếm vòng lặp
 // Cấu hình hiện hành (sẽ được cập nhật realtime khi admin sửa /config trên web).
 let hset = HSET_DEFAULT;
 let deadband = DEADBAND_DEFAULT;
+let mode = 'continuous';   // "off" | "continuous" | "intermittent" (CONTRACT mục 2)
 
 // ---- Khởi tạo Firebase ---------------------------------------------------------
 const app = initializeApp(firebaseConfig);
@@ -77,13 +81,14 @@ async function main() {
     process.exit(1);
   }
 
-  // Lắng nghe /config realtime: nếu admin sửa hset/deadband trên web, mô phỏng cập nhật theo.
+  // Lắng nghe /config realtime: nếu admin sửa hset/deadband/mode trên web, mô phỏng cập nhật theo.
   onValue(ref(db, 'config'), (snap) => {
     const c = snap.val();
     if (c && typeof c === 'object') {
       if (Number.isFinite(Number(c.hset))) hset = Number(c.hset);
       if (Number.isFinite(Number(c.deadband))) deadband = Number(c.deadband);
-      console.log(`  [config] đọc từ Firebase: hset=${hset}, deadband=${deadband}`);
+      if (VALID_MODES.includes(c.mode)) mode = c.mode;
+      console.log(`  [config] đọc từ Firebase: hset=${hset}, deadband=${deadband}, mode=${mode}`);
     }
   });
 
@@ -109,15 +114,23 @@ async function injectOnce() {
   const noiseT = (Math.random() - 0.5) * 0.4;   // ±0.2 °C
   temperature = clamp(temperature + noiseT + (mist ? -0.05 : 0.03), 22, 38);
 
-  // 2) Thuật toán Deadband (CONTRACT mục 2) — máy phun làm TĂNG độ ẩm.
-  const lowEdge = hset - deadband;   // < ngưỡng này -> BẬT
-  const highEdge = hset + deadband;  // > ngưỡng này -> TẮT
-  if (humidity < lowEdge) {
-    mist = true;                     // độ ẩm thấp -> bật phun
-  } else if (humidity > highEdge) {
-    mist = false;                    // độ ẩm cao -> tắt phun
+  // 2) Chế độ phun sương (CONTRACT mục 2 — /config/mode):
+  //    "off"          -> luôn tắt, bỏ qua Deadband hoàn toàn.
+  //    "continuous"   -> chạy đúng thuật toán Deadband (như trước giờ).
+  //    "intermittent" -> CHƯA có đặc tả chi tiết (chờ Embed quyết định chu kỳ bật/tắt cụ
+  //                      thể) -> tạm xử như "continuous" để không chặn test các phần khác.
+  if (mode === 'off') {
+    mist = false;
+  } else {
+    const lowEdge = hset - deadband;   // < ngưỡng này -> BẬT
+    const highEdge = hset + deadband;  // > ngưỡng này -> TẮT
+    if (humidity < lowEdge) {
+      mist = true;                     // độ ẩm thấp -> bật phun
+    } else if (humidity > highEdge) {
+      mist = false;                    // độ ẩm cao -> tắt phun
+    }
+    // nằm trong [lowEdge, highEdge] -> giữ nguyên mist (chống nhảy relay)
   }
-  // nằm trong [lowEdge, highEdge] -> giữ nguyên mist (chống nhảy relay)
 
   // 3) Mô phỏng bồn nước: thỉnh thoảng đặt "empty" để test cảnh báo cạn nước.
   //    Cứ ~20 vòng (~1 phút) cho bồn cạn vài vòng rồi đầy lại; bơm chạy khi đang cạn.
@@ -161,7 +174,7 @@ async function injectOnce() {
     console.log(
       `[#${String(tick).padStart(4, '0')}] ` +
       `T=${tOut.toFixed(1)}°C  RH=${hOut.toFixed(1)}%  ` +
-      `mist=${mist ? 'ON ' : 'OFF'}  tank=${tank}  pump=${pump ? 'ON ' : 'OFF'}  ` +
+      `mist=${mist ? 'ON ' : 'OFF'}  mode=${mode}  tank=${tank}  pump=${pump ? 'ON ' : 'OFF'}  ` +
       `(hset=${hset}±${deadband} → min=${hset - deadband} max=${hset + deadband})` +
       (tank === 'empty' ? '  ⚠ CẢNH BÁO CẠN NƯỚC' : '')
     );
