@@ -132,28 +132,33 @@
       <!-- Panel trạng thái thiết bị -->
       <section class="glass rounded-2xl p-6">
         <h2 class="text-white font-bold mb-4 flex items-center gap-2">⚙️ Trạng thái hệ thống</h2>
-        <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="grid grid-cols-2 lg:grid-cols-3 gap-4">
           <div class="bg-white/5 rounded-xl p-4 flex flex-col gap-2">
             <span class="text-slate-400 text-sm">Máy phun sương</span>
             <span id="stMist" class="px-3 py-1 rounded-full text-sm font-semibold bg-gray-600/30 text-gray-300 w-max">—</span>
           </div>
           <div class="bg-white/5 rounded-xl p-4 flex flex-col gap-2">
-            <span class="text-slate-400 text-sm">Bồn nước</span>
+            <span class="text-slate-400 text-sm">Mức nước</span>
             <span id="stTank" class="px-3 py-1 rounded-full text-sm font-semibold bg-gray-600/30 text-gray-300 w-max">—</span>
           </div>
+          <!-- Bơm châm nước — TẠM ẨN (2026-07-14): chưa có phần cứng bơm thật, badge trạng thái
+               + nút điều khiển thủ công gây hiểu nhầm (bấm nút không làm badge đổi vì ESP1 chưa
+               đọc /config/pumpManualOn). Bật lại bằng cách gỡ comment khối này + khối bên dưới,
+               và đổi lg:grid-cols-3 về lg:grid-cols-4. Xem docs/TIEN-DO-2026-07-02.md.
           <div class="bg-white/5 rounded-xl p-4 flex flex-col gap-2">
             <span class="text-slate-400 text-sm">Bơm châm nước</span>
             <span id="stPump" class="px-3 py-1 rounded-full text-sm font-semibold bg-gray-600/30 text-gray-300 w-max">—</span>
           </div>
+          -->
           <div class="bg-white/5 rounded-xl p-4 flex flex-col gap-2">
             <span class="text-slate-400 text-sm">Gateway</span>
             <span id="stGateway" class="px-3 py-1 rounded-full text-sm font-semibold bg-gray-600/30 text-gray-300 w-max">—</span>
           </div>
         </div>
 
-        <!-- Điều khiển bơm thủ công — ẨN mặc định, chỉ hiện khi admin bật cờ
-             /config/pumpControlEnabled = true thẳng trong Firebase Console (chờ phần
-             cứng đọc/điều khiển bơm xong). Không cần deploy lại web để bật/tắt tính năng. -->
+        <!-- Điều khiển bơm thủ công — TẠM ẨN (2026-07-14, cùng lý do ở trên). Nguyên bản: ẨN mặc
+             định, chỉ hiện khi admin bật cờ /config/pumpControlEnabled = true thẳng trong Firebase
+             Console (chờ phần cứng đọc/điều khiển bơm xong).
         <div id="pumpControlWrap" hidden class="mt-4 bg-amber-500/10 border border-amber-500/25 rounded-xl p-4 flex items-center justify-between gap-3 flex-wrap">
           <div>
             <p class="text-sm font-semibold text-amber-200">Điều khiển bơm thủ công</p>
@@ -164,6 +169,7 @@
             —
           </button>
         </div>
+        -->
       </section>
 
       <!-- Biểu đồ realtime -->

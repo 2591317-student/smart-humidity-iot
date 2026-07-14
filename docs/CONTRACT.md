@@ -39,15 +39,17 @@ Region khuyến nghị: **asia-southeast1** (Singapore). Mọi giá trị số l
                               // Embed quyết định chu kỳ bật/tắt cụ thể). Mặc định "continuous"
                               // nếu field thiếu (giữ hành vi hiện tại, không phá luồng cũ).
     "pumpControlEnabled": false, // CỜ ẨN — admin bật thẳng trong Firebase Console (không cần
-                                 // deploy lại web). true -> web HIỆN khối "Điều khiển bơm thủ
-                                 // công"; false (mặc định/thiếu) -> khối này ẩn hoàn toàn. Dùng để
-                                 // chuẩn bị sẵn UI phía web trong lúc chờ Embed hoàn thành mục
-                                 // "giám sát/điều khiển bơm" (phần cứng + firmware), bật lên khi sẵn sàng.
+                                 // deploy lại web). Nguyên bản: true -> web HIỆN khối "Điều khiển
+                                 // bơm thủ công"; false (mặc định/thiếu) -> ẩn hoàn toàn.
+                                 // ⚠️ 2026-07-14: khối UI này đang bị CMT hẳn trong web/js/app.js +
+                                 // web/index.html (xem docs/TIEN-DO-2026-07-02.md) — bật cờ này lên
+                                 // KHÔNG còn hiện gì nữa cho tới khi ai đó gỡ comment lại code.
     "pumpManualOn": false,       // Lệnh BẬT/TẮT bơm thủ công do admin gửi qua nút toggle trên web.
                                  // ESP1 (khi Embed đã đấu relay bơm) đọc field này qua subscribe/poll
                                  // /config, giống cách đọc hset/deadband, để điều khiển relay bơm.
                                  // CHƯA hiện thực phía firmware — chờ Embed xong mục giám sát/điều
-                                 // khiển bơm rồi nối logic đọc field này vào relay tương ứng.
+                                 // khiển bơm rồi nối logic đọc field này vào relay tương ứng. UI web
+                                 // ghi field này đang bị CMT (xem pumpControlEnabled ở trên).
     "lastUpdate": "2026-06-24 10:00:00",  // string hiển thị
     "updatedBy": "admin@email"            // email người chỉnh
   },

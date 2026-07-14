@@ -15,7 +15,7 @@ import { initAuth, loginWithGoogle, logout, watchAuth, describeAuthError } from 
 import {
   initDb, checkIsAdmin,
   listenSensor, listenStatus, listenConfig, listenWebSettings,
-  writeConfig, writePumpManual, writeWebSettings, correctEsp1Online
+  writeConfig, /* writePumpManual, */ writeWebSettings, correctEsp1Online
 } from "./db.js";
 import { initChart, pushPoint, clearChart } from "./chart.js";
 import { initAlarm, armAudio, updateAlarm, disposeAlarm } from "./alarm.js";
@@ -52,11 +52,12 @@ const els = {
   // Status panel
   stMist: $("stMist"),
   stTank: $("stTank"),
-  stPump: $("stPump"),
+  // Bơm châm nước — TẠM ẨN (2026-07-14, xem web/index.html + docs/TIEN-DO-2026-07-02.md).
+  // stPump: $("stPump"),
   stGateway: $("stGateway"),
-  // Điều khiển bơm thủ công (ẩn mặc định — chỉ hiện khi /config/pumpControlEnabled = true)
-  pumpControlWrap: $("pumpControlWrap"),
-  btnTogglePump: $("btnTogglePump"),
+  // Điều khiển bơm thủ công — TẠM ẨN cùng lý do trên.
+  // pumpControlWrap: $("pumpControlWrap"),
+  // btnTogglePump: $("btnTogglePump"),
   // Chart
   chartCanvas: $("sensorChart"),
   // Config form
@@ -82,7 +83,7 @@ const els = {
 // ---- Trạng thái runtime -----------------------------------------------------
 let isAdmin = false;
 let currentUser = null;
-let g_pumpManualOn = false;   // trạng thái /config/pumpManualOn hiện tại (để nút toggle biết lật sang gì)
+// let g_pumpManualOn = false; // TẠM ẨN cùng tính năng điều khiển bơm thủ công (xem ở trên)
 let unsub = [];          // danh sách hàm huỷ listener để dọn khi logout
 let chartReady = false;
 let audioArmed = false;
@@ -326,9 +327,9 @@ function renderStatus(st) {
   els.stTank.className = "px-3 py-1 rounded-full text-sm font-semibold " +
     (tankEmpty ? "bg-red-500/25 text-red-300" : "bg-green-500/20 text-green-300");
 
-  // Bơm châm (pump).
-  setBadge(els.stPump, st.pump === true,
-    { on: "Đang bơm", off: "Tắt", onClass: "bg-amber-500/20 text-amber-300", offClass: "bg-gray-600/30 text-gray-300" });
+  // Bơm châm (pump) — TẠM ẨN (2026-07-14, xem web/index.html).
+  // setBadge(els.stPump, st.pump === true,
+  //   { on: "Đang bơm", off: "Tắt", onClass: "bg-amber-500/20 text-amber-300", offClass: "bg-gray-600/30 text-gray-300" });
 
   // Gateway: esp1 (bình thường) / esp2 (gateway dự phòng).
   const gw = st.gateway || "—";
@@ -376,15 +377,14 @@ function renderConfig(cfg) {
   els.cfgLastUpdate.textContent = cfg.lastUpdate || "—";
   els.cfgUpdatedBy.textContent = cfg.updatedBy || "—";
 
-  // Điều khiển bơm thủ công — chỉ hiện khi admin bật cờ pumpControlEnabled thẳng trong
-  // Firebase Console (không cần deploy lại web để bật/tắt tính năng này).
-  g_pumpManualOn = cfg.pumpManualOn === true;
-  const pumpFeatureOn = cfg.pumpControlEnabled === true;
-  els.pumpControlWrap.hidden = !pumpFeatureOn;
-  if (pumpFeatureOn) {
-    els.btnTogglePump.textContent = g_pumpManualOn ? "Đang BẬT — bấm để tắt" : "Đang TẮT — bấm để bật";
-    els.btnTogglePump.disabled = !isAdmin;
-  }
+  // Điều khiển bơm thủ công — TẠM ẨN (2026-07-14, xem web/index.html + docs/TIEN-DO-2026-07-02.md).
+  // g_pumpManualOn = cfg.pumpManualOn === true;
+  // const pumpFeatureOn = cfg.pumpControlEnabled === true;
+  // els.pumpControlWrap.hidden = !pumpFeatureOn;
+  // if (pumpFeatureOn) {
+  //   els.btnTogglePump.textContent = g_pumpManualOn ? "Đang BẬT — bấm để tắt" : "Đang TẮT — bấm để bật";
+  //   els.btnTogglePump.disabled = !isAdmin;
+  // }
 }
 
 // /webSettings — CHỈ web dùng (ngưỡng online), KHÔNG liên quan tới ESP nên tách khỏi /config
@@ -455,7 +455,7 @@ function applyAdminMode(admin) {
     els.cfgBtn.disabled = false;
     els.cfgBtn.hidden = false;
     els.cfgReadonlyNote.hidden = true;
-    els.btnTogglePump.disabled = false;
+    // els.btnTogglePump.disabled = false; // TẠM ẨN cùng tính năng điều khiển bơm thủ công
   } else {
     els.adminBadge.textContent = "Khách (chỉ xem)";
     els.adminBadge.className = "px-2.5 py-0.5 rounded-full text-xs font-semibold bg-gray-500/20 text-gray-300";
@@ -466,7 +466,7 @@ function applyAdminMode(admin) {
     els.cfgDeadband.disabled = true;
     els.cfgOnlineTimeout.disabled = true;
     els.cfgBtn.disabled = true;
-    els.btnTogglePump.disabled = true;
+    // els.btnTogglePump.disabled = true; // TẠM ẨN cùng tính năng điều khiển bơm thủ công
     els.cfgBtn.hidden = true;
     els.cfgReadonlyNote.hidden = false;
   }
@@ -525,28 +525,31 @@ els.cfgForm.addEventListener("submit", async (e) => {
 });
 
 // ============================================================================
-//  TOGGLE BƠM THỦ CÔNG (chỉ hiện khi /config/pumpControlEnabled = true; chỉ admin).
+//  TOGGLE BƠM THỦ CÔNG — TẠM ẨN (2026-07-14): chưa có phần cứng bơm thật, nút bấm
+//  không phản ánh được vào badge trạng thái (ESP1 chưa đọc /config/pumpManualOn) nên
+//  gây hiểu nhầm. Gỡ comment khối này + els.pumpControlWrap/btnTogglePump/g_pumpManualOn
+//  ở trên + khối HTML trong web/index.html khi Embed xong phần cứng bơm.
 // ============================================================================
-els.btnTogglePump.addEventListener("click", async () => {
-  if (!isAdmin) return; // chốt chặn an toàn (nút đã disabled cho non-admin).
-
-  const nextOn = !g_pumpManualOn;
-  els.btnTogglePump.disabled = true;
-  const oldLabel = els.btnTogglePump.textContent;
-  els.btnTogglePump.textContent = "Đang gửi...";
-
-  try {
-    await writePumpManual(nextOn, currentUser ? currentUser.email : "");
-    // Không tự set g_pumpManualOn ở đây — chờ renderConfig() nhận lại từ onValue("/config")
-    // để đảm bảo UI luôn khớp giá trị THẬT trên Firebase (nguồn sự thật duy nhất).
-  } catch (err) {
-    console.error("[app] writePumpManual lỗi:", err);
-    alert("Lỗi điều khiển bơm: " + (err && err.message ? err.message : "không xác định."));
-  } finally {
-    els.btnTogglePump.disabled = !isAdmin;
-    if (els.btnTogglePump.textContent === "Đang gửi...") els.btnTogglePump.textContent = oldLabel;
-  }
-});
+// els.btnTogglePump.addEventListener("click", async () => {
+//   if (!isAdmin) return; // chốt chặn an toàn (nút đã disabled cho non-admin).
+//
+//   const nextOn = !g_pumpManualOn;
+//   els.btnTogglePump.disabled = true;
+//   const oldLabel = els.btnTogglePump.textContent;
+//   els.btnTogglePump.textContent = "Đang gửi...";
+//
+//   try {
+//     await writePumpManual(nextOn, currentUser ? currentUser.email : "");
+//     // Không tự set g_pumpManualOn ở đây — chờ renderConfig() nhận lại từ onValue("/config")
+//     // để đảm bảo UI luôn khớp giá trị THẬT trên Firebase (nguồn sự thật duy nhất).
+//   } catch (err) {
+//     console.error("[app] writePumpManual lỗi:", err);
+//     alert("Lỗi điều khiển bơm: " + (err && err.message ? err.message : "không xác định."));
+//   } finally {
+//     els.btnTogglePump.disabled = !isAdmin;
+//     if (els.btnTogglePump.textContent === "Đang gửi...") els.btnTogglePump.textContent = oldLabel;
+//   }
+// });
 
 function showCfgMsg(text, type) {
   els.cfgMsg.textContent = text;
