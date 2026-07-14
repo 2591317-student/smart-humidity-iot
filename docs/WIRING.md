@@ -35,7 +35,9 @@
 > dùng điện trở kéo lên/xuống ngoài (10kΩ) và đảm bảo mức điện áp ≤ 3.3V. Không dùng làm OUTPUT.
 
 > **Lưu ý phần Basic:** trong firmware ESP1, `ENABLE_ADVANCED_WATER = 0` nên hai chân 34/35 **chưa**
-> được đọc; `tank="full"`, `pump=false` cố định. Đặt `1` và `pinMode(...INPUT)` khi đã đấu nối thật.
+> được đọc; `tank=3` (đầy), `pump=false` cố định. Đặt `1` và `pinMode(...INPUT)` khi đã đấu nối thật.
+> ⚠️ Mạch mức nước MỚI dùng 3 đầu dò (M2/M3/M4) cho 4 mức 0-3 (xem `docs/CONTRACT.md` mục 2) — chưa
+> có GPIO cố định, sẽ cập nhật khi Embed chọn xong 3 chân đấu nối.
 
 ---
 

@@ -134,7 +134,7 @@ npm install
 npm start                          # mỗi ~3s ghi /sensor + /status
 ```
 → Mở web → đăng nhập admin → thấy **nhiệt độ/độ ẩm + biểu đồ realtime**, badge **Quản trị viên**,
-chỉnh được Hₛₑₜ/Deadband; injector thỉnh thoảng đặt `tank="empty"` để thử **cảnh báo cạn nước**.
+chỉnh được Hₛₑₜ/Deadband; injector thỉnh thoảng đặt `tank=0` (rất thấp) để thử **cảnh báo mức nước**.
 
 ---
 

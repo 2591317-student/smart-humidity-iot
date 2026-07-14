@@ -54,7 +54,7 @@ cd mobile && python -m http.server 5173                   # mở http://localhos
 Trên trang PWA → mở **Tuỳ chọn nâng cao** → bật **Chế độ Test** → điền **WiFi + MAC ESP còn lại** → **Gửi** →
 hiện **"✓ Saved. Rebooting."** và terminal mock **in ra cấu hình vừa nhận** (`ssid/password/peerMac`). (Chứng minh #3: REST POST + WiFi không hardcode)
 
-**B5 — Cảnh báo cạn nước:** injector định kỳ đặt `tank="empty"` → dashboard hiện **hộp đỏ nhấp nháy + bíp**. (Chứng minh #9)
+**B5 — Cảnh báo mức nước:** injector định kỳ đặt `tank=0` (rất thấp) → dashboard hiện **hộp đỏ nhấp nháy + bíp**. (Chứng minh #9)
 
 **B6 — Firmware biên dịch:** `cd firmware && pio run` → **2 SUCCESS** (esp1-main, esp2-sensor). (Chứng minh #1,#2)
 

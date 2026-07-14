@@ -45,7 +45,7 @@ before(async () => {
     await set(ref(db, "devices/" + DEVICE), true);
     await set(ref(db, "sensor"), { temperature: 25, humidity: 60, timestamp: 1700000000 });
     await set(ref(db, "status"), {
-      mist: false, tank: "full", pump: false, esp1Online: true, gateway: "esp1", lastSeen: 1700000000,
+      mist: false, tank: 3, pump: false, esp1Online: true, gateway: "esp1", lastSeen: 1700000000,
     });
     await set(ref(db, "config"), { hset: 70, deadband: 5, lastUpdate: "init", updatedBy: "seed" });
   });

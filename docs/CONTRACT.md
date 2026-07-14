@@ -65,7 +65,15 @@ Region khuyến nghị: **asia-southeast1** (Singapore). Mọi giá trị số l
   },
   "status": {                 // ESP1 GHI
     "mist": false,            // bool — máy phun đang bật?
-    "tank": "full",           // "full" | "empty"  (nâng cao)
+    "tank": 3,                // SỐ 0-3 (nâng cao) — mức nước bồn chứa:
+                              //   0 = rất thấp/cạn (kích hoạt hộp cảnh báo nhấp nháy trên web)
+                              //   1 = thấp (chỉ hiện badge vàng, KHÔNG báo động)
+                              //   2 = bình thường
+                              //   3 = đầy nước (mặc định khi chưa đấu cảm biến — Basic)
+                              // Ứng với mạch chỉ báo mức nước dùng 3 đầu dò (M2/M3/M4) + GND
+                              // (M1), transistor BC547 — giá trị lý tưởng = SỐ đầu dò đang
+                              // ngập nước (đếm 0..3). Board thật CHƯA đấu GPIO cho mạch này
+                              // (Embed mới thiết kế phần cứng) — firmware hiện cố định = 3.
     "pump": false,            // bool — bơm châm nước đang chạy? (nâng cao)
     "esp1Online": true,       // heartbeat (tham khảo — web KHÔNG dựa vào cờ này)
     "gateway": "esp1",        // "esp1" | "esp2"  (esp2 = đang chạy gateway dự phòng)
@@ -311,7 +319,7 @@ MAC (điền sẵn `peerMac` cho ESP còn lại).
 ## 8. GPIO pin map (mặc định — đổi được, ghi chú `#define` ở đầu file)
 
 **ESP2 (sensor):** SHT30 `SDA=21`, `SCL=22` (I²C, địa chỉ 0x44); switch-role (nâng cao) `GPIO 4` (INPUT_PULLUP).
-**ESP1 (main):** Relay phun sương `GPIO 26` (mức kích cấu hình `RELAY_ACTIVE_HIGH`); phao/tiếp điểm cạn (nâng cao) `GPIO 34` (INPUT, chỉ đọc); tiếp điểm bơm (nâng cao) `GPIO 35` (INPUT).
+**ESP1 (main):** Relay phun sương `GPIO 26` (mức kích cấu hình `RELAY_ACTIVE_HIGH`); phao/tiếp điểm cạn — mạch CŨ, nhị phân (nâng cao) `GPIO 34` (INPUT, chỉ đọc); tiếp điểm bơm (nâng cao) `GPIO 35` (INPUT). ⚠️ Mạch mức nước MỚI (3 đầu dò M2/M3/M4, xem mục 2 `tank`) CHƯA có GPIO cố định — Embed sẽ chọn 3 chân INPUT còn trống khi đấu nối thật.
 
 ---
 

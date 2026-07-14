@@ -50,7 +50,7 @@ const VALID_MODES = ['off', 'continuous', 'intermittent'];
 let humidity = 62;                 // %RH khởi điểm
 let temperature = 28.0;            // °C khởi điểm
 let mist = false;                  // trạng thái máy phun (giữ nguyên trong vùng deadband)
-let tank = 'full';                 // "full" | "empty"
+let tank = 3;                       // 0=rất thấp, 1=thấp, 2=bình thường, 3=đầy (CONTRACT mục 2)
 let pump = false;                  // bơm châm nước
 let tick = 0;                      // đếm vòng lặp
 
@@ -132,16 +132,14 @@ async function injectOnce() {
     // nằm trong [lowEdge, highEdge] -> giữ nguyên mist (chống nhảy relay)
   }
 
-  // 3) Mô phỏng bồn nước: thỉnh thoảng đặt "empty" để test cảnh báo cạn nước.
-  //    Cứ ~20 vòng (~1 phút) cho bồn cạn vài vòng rồi đầy lại; bơm chạy khi đang cạn.
+  // 3) Mô phỏng mức nước bồn: cứ ~20 vòng (~1 phút) cho mức nước tụt dần 3→2→1→0 rồi đầy
+  //    lại, để demo đủ cả 4 màu badge trên dashboard; bơm chạy khi mức = 0 (rất thấp, kích
+  //    hoạt cảnh báo nhấp nháy — xem web/js/alarm.js).
   const phase = tick % 20;
-  if (phase >= 16 && phase <= 18) {
-    tank = 'empty';                  // 3 vòng cạn nước -> dashboard hiện cảnh báo
-    pump = true;                     // bơm châm nước đang chạy
-  } else {
-    tank = 'full';
-    pump = false;
-  }
+  if (phase === 16) { tank = 2; pump = false; }
+  else if (phase === 17) { tank = 1; pump = false; }
+  else if (phase === 18) { tank = 0; pump = true; }   // rất thấp -> dashboard hiện cảnh báo
+  else { tank = 3; pump = false; }
 
   // 4) Thời gian epoch GIÂY (CONTRACT mục 10: thời gian epoch giây).
   const nowSec = Math.floor(Date.now() / 1000);
@@ -176,7 +174,7 @@ async function injectOnce() {
       `T=${tOut.toFixed(1)}°C  RH=${hOut.toFixed(1)}%  ` +
       `mist=${mist ? 'ON ' : 'OFF'}  mode=${mode}  tank=${tank}  pump=${pump ? 'ON ' : 'OFF'}  ` +
       `(hset=${hset}±${deadband} → min=${hset - deadband} max=${hset + deadband})` +
-      (tank === 'empty' ? '  ⚠ CẢNH BÁO CẠN NƯỚC' : '')
+      (tank === 0 ? '  ⚠ CẢNH BÁO MỨC NƯỚC RẤT THẤP' : '')
     );
   } catch (e) {
     console.error('[LỖI ghi Firebase]', e.code || e.message);

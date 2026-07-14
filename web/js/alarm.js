@@ -1,9 +1,11 @@
 // ============================================================================
 //  alarm.js — Cảnh báo cạn nước (theo CONTRACT mục 2 & yêu cầu nâng cao).
-//  Khi /status/tank === "empty":
+//  /status/tank là SỐ 0-3 (số đầu dò trong 3 đầu dò M2/M3/M4 đang ngập nước).
+//  Khi tank === 0 (rất thấp/cạn hẳn):
 //    - Hiện hộp đỏ NHẤP NHÁY (toggle class .alarm-active trên #alarmBox).
 //    - Phát tiếng bíp lặp lại bằng Web Audio API.
-//  Khi hết cạn ("full") → ẩn hộp + tắt bíp.
+//  Khi tank > 0 (1/2/3) → ẩn hộp + tắt bíp. Mức 1 ("thấp") chỉ hiện badge vàng nhẹ
+//  trên panel trạng thái (xem app.js#renderStatus), KHÔNG kích hoạt hộp cảnh báo này.
 //
 //  Lưu ý trình duyệt: AudioContext chỉ chạy sau khi người dùng tương tác
 //  (click). app.js gọi armAudio() trong sự kiện click đầu tiên để "mở khoá".
@@ -92,12 +94,12 @@ function stopAlarm() {
 }
 
 /**
- * Cập nhật cảnh báo theo trạng thái bồn nước.
+ * Cập nhật cảnh báo theo mức nước bồn chứa.
  * Gọi mỗi khi /status thay đổi.
- * @param {string|undefined} tank  "full" | "empty"
+ * @param {number|undefined} tank  0 (rất thấp) .. 3 (đầy) — xem CONTRACT mục 2
  */
 export function updateAlarm(tank) {
-  if (tank === "empty") startAlarm();
+  if (tank === 0) startAlarm();
   else stopAlarm();
 }
 

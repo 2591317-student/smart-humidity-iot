@@ -94,9 +94,14 @@ SET_LOOP_TASK_STACK_SIZE(16 * 1024);   // 16KB
 
 // Nâng cao (Advanced): cảm biến mức nước / tiếp điểm bơm — chỉ ĐỌC.
 //   GPIO 34/35 là chân chỉ-INPUT (không pull nội), nối qua mạch chia/điện trở ngoài.
-#define PIN_TANK_FLOAT     34   // Phao báo cạn (nâng cao). HIGH = còn nước (tuỳ mạch).
+//   ⚠️ 2026-07-14: Embed đang thiết kế mạch chỉ báo mức nước MỚI dùng 3 đầu dò (M2/M3/M4,
+//   transistor BC547) cho 4 mức 0-3 thay vì phao nhị phân cũ (xem docs/CONTRACT.md mục 2) —
+//   CHƯA đấu nối GPIO thật cho mạch này. PIN_TANK_FLOAT dưới đây vẫn là chân phao CŨ (1 mức,
+//   nhị phân), giữ tạm để code biên dịch được; khi Embed đấu xong 3 chân cho mạch mới, thay
+//   khối #if ENABLE_ADVANCED_WATER bên dưới bằng cách đếm số chân HIGH trong 3 chân đó.
+#define PIN_TANK_FLOAT     34   // Phao báo cạn (mạch CŨ, nhị phân). HIGH = còn nước (tuỳ mạch).
 #define PIN_PUMP_SENSE     35   // Tiếp điểm bơm châm nước đang chạy (nâng cao).
-#define ENABLE_ADVANCED_WATER 0 // 0 = Basic (tank="full", pump=false cố định).
+#define ENABLE_ADVANCED_WATER 0 // 0 = Basic (tank=3 "đầy" cố định, pump=false cố định).
                                 //   Đặt 1 khi đã đấu nối phần cứng nâng cao.
 
 // ============================================================================
@@ -413,13 +418,16 @@ void pushToFirebase() {
   }
 
   // ---- Trạng thái nước (nâng cao) ----
-  String tank = "full";   // Basic: mặc định còn nước
-  bool   pump = false;    // Basic: mặc định bơm không chạy
+  // tank: SỐ 0-3 (CONTRACT mục 2) — 0=rất thấp/cạn, 1=thấp, 2=bình thường, 3=đầy.
+  // Ứng với mạch 3 đầu dò M2/M3/M4 MỚI (xem ghi chú ở PIN_TANK_FLOAT phía trên): giá trị
+  // lý tưởng = số đầu dò đang ngập nước. Basic (chưa đấu cảm biến): mặc định đầy (3).
+  int  tank = 3;          // Basic: mặc định đầy nước
+  bool pump = false;      // Basic: mặc định bơm không chạy
 #if ENABLE_ADVANCED_WATER
-  // Đọc phao báo cạn: tuỳ mạch mà HIGH=còn nước hay cạn. Ở đây quy ước:
-  //   PIN_TANK_FLOAT == HIGH -> còn nước ("full"); LOW -> cạn ("empty").
-  // Hiệu chỉnh theo phần cứng thực tế khi đấu nối.
-  tank = (digitalRead(PIN_TANK_FLOAT) == HIGH) ? "full" : "empty";
+  // TODO: mạch MỚI dùng 3 đầu dò cho 4 mức — hiện đoạn dưới vẫn đọc phao NHỊ PHÂN CŨ
+  // (1 chân) làm tạm, quy ước HIGH=còn nước -> 3 (đầy), LOW=cạn -> 0 (rất thấp). Khi Embed
+  // đấu xong 3 chân của mạch mới, thay bằng: tank = digitalRead(pinM2)+digitalRead(pinM3)+digitalRead(pinM4).
+  tank = (digitalRead(PIN_TANK_FLOAT) == HIGH) ? 3 : 0;
   // Tiếp điểm bơm: HIGH -> bơm đang chạy.
   pump = (digitalRead(PIN_PUMP_SENSE) == HIGH);
 #endif
@@ -436,8 +444,8 @@ void pushToFirebase() {
     Serial.printf("[FB] Ghi /status loi: %s\n", fbdo.errorReason().c_str());
   } else {
     // Kèm RAM còn trống để chẩn đoán: heap tụt dần/gần 0 -> cạn/vỡ heap (không phải tràn stack).
-    Serial.printf("[FB] Da day (2 request): T=%.1f H=%.1f mist=%d tank=%s pump=%d ts=%lu | freeHeap=%u\n",
-                  g_latestTemp, g_latestHumi, g_mist, tank.c_str(), pump,
+    Serial.printf("[FB] Da day (2 request): T=%.1f H=%.1f mist=%d tank=%d pump=%d ts=%lu | freeHeap=%u\n",
+                  g_latestTemp, g_latestHumi, g_mist, tank, pump,
                   (unsigned long)ts, (unsigned)ESP.getFreeHeap());
   }
 }

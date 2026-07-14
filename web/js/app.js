@@ -321,11 +321,17 @@ function renderStatus(st) {
   setBadge(els.stMist, st.mist === true,
     { on: "Đang phun", off: "Tắt", onClass: "bg-sky-500/20 text-sky-300 mist-on", offClass: "bg-gray-600/30 text-gray-300" });
 
-  // Bồn nước (tank): full/empty.
-  const tankEmpty = st.tank === "empty";
-  els.stTank.textContent = tankEmpty ? "Cạn nước" : (st.tank === "full" ? "Đầy nước" : "—");
-  els.stTank.className = "px-3 py-1 rounded-full text-sm font-semibold " +
-    (tankEmpty ? "bg-red-500/25 text-red-300" : "bg-green-500/20 text-green-300");
+  // Mức nước (tank): SỐ 0-3, ứng với số đầu dò (trong 3 đầu dò M2/M3/M4) đang ngập nước
+  // (CONTRACT mục 2). 0 = rất thấp/cạn, 1 = thấp, 2 = bình thường, 3 = đầy.
+  const TANK_LEVELS = {
+    0: { text: "Rất thấp — cần châm nước", cls: "bg-red-500/25 text-red-300" },
+    1: { text: "Thấp", cls: "bg-amber-500/20 text-amber-300" },
+    2: { text: "Bình thường", cls: "bg-sky-500/20 text-sky-300" },
+    3: { text: "Đầy nước", cls: "bg-green-500/20 text-green-300" },
+  };
+  const tankInfo = TANK_LEVELS[st.tank] || { text: "—", cls: "bg-gray-600/30 text-gray-300" };
+  els.stTank.textContent = tankInfo.text;
+  els.stTank.className = "px-3 py-1 rounded-full text-sm font-semibold " + tankInfo.cls;
 
   // Bơm châm (pump) — TẠM ẨN (2026-07-14, xem web/index.html).
   // setBadge(els.stPump, st.pump === true,

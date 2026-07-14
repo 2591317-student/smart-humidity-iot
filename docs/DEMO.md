@@ -18,7 +18,7 @@ ESP32, nhờ 2 công cụ trong `tools/`.
 ### A1. Bơm dữ liệu cảm biến giả → xem Web Dashboard
 
 `data-injector` đóng vai **ESP1 giả**: đăng nhập bằng tài khoản thiết bị rồi ghi `/sensor` + `/status`
-mỗi ~3s, có mô phỏng đúng thuật toán Deadband và thỉnh thoảng cho bồn "cạn nước" để bật cảnh báo.
+mỗi ~3s, có mô phỏng đúng thuật toán Deadband và thỉnh thoảng cho mức nước tụt xuống rất thấp để bật cảnh báo.
 
 ```bash
 cd tools/data-injector
@@ -30,7 +30,7 @@ npm start
 Mở **Web Dashboard** (đã deploy hoặc chạy local) → đăng nhập Google (admin) → quan sát:
 - Nhiệt độ/độ ẩm cập nhật realtime, **biểu đồ Chart.js** cuộn theo thời gian.
 - Badge **Máy phun (mist)** bật/tắt theo Deadband.
-- Khi injector cho `tank="empty"` → hộp **cảnh báo cạn nước** nhấp nháy + có tiếng bíp; badge bơm
+- Khi injector cho `tank=0` (rất thấp) → hộp **cảnh báo mức nước** nhấp nháy + có tiếng bíp; badge bơm
   chuyển "Đang bơm".
 
 ### A2. Chỉnh cấu hình (admin) → injector phản ứng
@@ -123,7 +123,7 @@ giữ nút, ESP chạy luôn bằng cấu hình đã lưu (hoặc hardcode fallb
 | 9 | Người chưa đăng nhập bị chặn | Mở web khi chưa login → không đọc được dữ liệu | ☐ |
 | 10 | Provisioning qua REST + QR | PWA/mock POST `/provision` → `{ok:true}` + thiết bị lưu cấu hình | ☐ |
 | **Nâng cao (bonus)** | | | |
-| 11 | Cảnh báo cạn nước | `tank="empty"` → hộp đỏ nhấp nháy + bíp trên web | ☐ |
+| 11 | Cảnh báo mức nước | `tank=0` (rất thấp, thang 0-3) → hộp đỏ nhấp nháy + bíp trên web | ☐ |
 | 12 | Bơm châm nước | `pump=true` → badge "Đang bơm" | ☐ |
 | 13 | Gateway dự phòng | `status/gateway="esp2"` → web hiện "ESP2 (dự phòng)" | ☐ |
 

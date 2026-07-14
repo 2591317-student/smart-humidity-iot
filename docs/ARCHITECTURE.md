@@ -262,8 +262,8 @@ Cùng một logic được hiện thực ở 3 nơi (giữ nhất quán): firmwa
 - **Admin:** chỉnh Hₛₑₜ/Deadband → đẩy xuống ESP1 realtime.
 - **Tự động hoá:** ESP1 chạy Deadband độc lập, vẫn điều khiển relay kể cả khi mất mạng (chỉ mất phần
   đẩy dữ liệu lên cloud).
-- **Nâng cao:** cảnh báo cạn nước (`/status/tank = "empty"`), bơm châm nước (`/status/pump`), gateway
-  dự phòng (`/status/gateway = "esp2"`).
+- **Nâng cao:** cảnh báo mức nước (`/status/tank` số 0-3, cảnh báo khi `= 0`), bơm châm nước
+  (`/status/pump`), gateway dự phòng (`/status/gateway = "esp2"`).
 
 ---
 

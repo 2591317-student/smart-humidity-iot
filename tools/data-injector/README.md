@@ -37,8 +37,8 @@ Mỗi ~3 giây tool sẽ:
 Ví dụ console:
 
 ```
-[#0007] T=27.9°C  RH=63.4%  mist=ON   tank=full  pump=OFF  (hset=70±5 → min=65 max=75)
-[#0017] T=28.1°C  RH=71.2%  mist=OFF  tank=empty pump=ON   (hset=70±5 → min=65 max=75)  ⚠ CẢNH BÁO CẠN NƯỚC
+[#0007] T=27.9°C  RH=63.4%  mist=ON   tank=3  pump=OFF  (hset=70±5 → min=65 max=75)
+[#0017] T=28.1°C  RH=71.2%  mist=OFF  tank=0  pump=ON   (hset=70±5 → min=65 max=75)  ⚠ CẢNH BÁO MỨC NƯỚC RẤT THẤP
 ```
 
 ## Hành vi mô phỏng
@@ -49,8 +49,9 @@ Ví dụ console:
 - **Cấu hình realtime:** tool lắng nghe `/config` trên Firebase; nếu admin sửa `hset`/`deadband`
   trên web, mô phỏng cập nhật theo ngay (không cần khởi động lại). Nếu chưa có `/config`, dùng
   mặc định `hset=70`, `deadband=5`.
-- **Cảnh báo cạn nước:** định kỳ (~mỗi phút) đặt `tank="empty"` vài vòng và bật `pump=true` để
-  test phần cảnh báo trên dashboard, sau đó trả về `full`.
+- **Cảnh báo mức nước:** định kỳ (~mỗi phút) cho `tank` tụt dần `3→2→1→0` rồi bật `pump=true` ở
+  mức `0` (rất thấp) để test phần cảnh báo trên dashboard, sau đó trả về `3` (đầy). Thang 0-3:
+  0=rất thấp, 1=thấp, 2=bình thường, 3=đầy (xem CONTRACT.md mục 2).
 
 ## Dừng
 
