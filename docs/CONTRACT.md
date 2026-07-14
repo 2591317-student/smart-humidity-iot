@@ -222,6 +222,10 @@ Sau khi lưu Preferences thành công → trả response → `delay(1000)` → `
 > hoàn toàn vào firmware đang chạy trên board thật đã khớp 100% chuẩn này chưa (xem "code phân kỳ"
 > trong `docs/TIEN-DO-2026-07-02.md`). Firmware trong repo vẫn PHẢI trả đúng `{"ok":true,...}` —
 > đây chỉ là lớp phòng thủ phía client, không phải đổi chuẩn.
+>
+> (2026-07-14: xác nhận thêm qua test trực tiếp bằng Thunder Client — board thật trả `{"status":"ok"}`
+> cho CẢ `/reboot` chứ không riêng `/provision`. `onClickReboot` giờ cũng khoan dung tương tự, tránh
+> hiện lỗi oan cho nút Khởi động lại khi lệnh thực ra đã thành công.)
 
 `GET /provision` → danh tính thiết bị + đọc lại cấu hình **ĐÃ GHI** qua `POST /provision` (không cần
 xem Serial). Gộp chung 1 endpoint (trước đây tách riêng `/info`, gây nhầm lẫn khi trao đổi — nay bỏ

@@ -266,7 +266,11 @@ async function onClickReboot() {
       bodyJson = JSON.parse(await resp.text());
     } catch (_) {}
 
-    if (resp.ok && bodyJson && bodyJson.ok === true) {
+    // Khoan dung response lệch chuẩn (board chạy firmware khác/cũ hơn repo trả {"status":"ok"}
+    // thay vì {"ok":true,...} — xem CONTRACT.md, đã gặp thực tế với /provision, giờ áp dụng luôn
+    // cho /reboot để tránh báo lỗi oan khi lệnh thực ra đã thành công).
+    const success = resp.ok && bodyJson && (bodyJson.ok === true || bodyJson.status === "ok");
+    if (success) {
       out.textContent = "✓ " + (bodyJson.message || "Đang khởi động lại…");
       out.className = "text-sm text-emerald-600";
     } else {
