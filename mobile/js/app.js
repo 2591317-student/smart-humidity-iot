@@ -56,7 +56,7 @@ function bindEvents() {
   $("#send-wifi").addEventListener("change", applySendToggles);
   $("#send-mac").addEventListener("change", applySendToggles);
 
-  // --- Nút chẩn đoán: gọi GET /info của ESP ---
+  // --- Nút chẩn đoán: gọi GET /provision của ESP ---
   $("#btn-test-info").addEventListener("click", testDeviceInfo);
 
   // --- Nút khởi động lại: gọi POST /reboot của ESP ---
@@ -195,9 +195,10 @@ function updateNetStatus() {
 }
 
 // ---------------------------------------------------------------------------
-// Chẩn đoán: gọi GET /info (danh tính) + GET /provision (cấu hình ĐÃ LƯU — SSID,
-// peerMac, có mật khẩu chưa) của ESP → xác nhận tới được thiết bị + xem lại đã lưu
-// đúng chưa mà không cần xem Serial (CONTRACT mục 5).
+// Chẩn đoán: gọi GET /provision (danh tính + cấu hình ĐÃ LƯU — id/role/mac/fw, SSID,
+// peerMac, có mật khẩu chưa) của ESP → xác nhận tới được thiết bị + xem lại đã lưu đúng
+// chưa mà không cần xem Serial (CONTRACT mục 5). Trước đây tách /info + /provision, gộp
+// lại thành 1 endpoint duy nhất cho gọn (đỡ nhầm lẫn khi trao đổi với nhóm).
 // ---------------------------------------------------------------------------
 async function fetchJsonSafe(url) {
   const resp = await fetch(url, { method: "GET" });
@@ -215,17 +216,9 @@ async function testDeviceInfo() {
   btn.disabled = true;
   btn.textContent = "Đang kiểm tra…";
   try {
-    const info = await fetchJsonSafe(base + "/info");
-    let pretty = "Danh tính (GET /info):\n" + (info.json ? JSON.stringify(info.json, null, 2) : info.text);
-
-    // GET /provision không bắt buộc phải có (firmware cũ/mock có thể chưa hỗ trợ) — lỗi ở
-    // đây KHÔNG làm hỏng kết quả /info đã lấy được ở trên.
-    try {
-      const prov = await fetchJsonSafe(base + "/provision");
-      if (prov.ok && prov.json) {
-        pretty += "\n\nCấu hình đã lưu (GET /provision):\n" + JSON.stringify(prov.json, null, 2);
-      }
-    } catch (_) {}
+    const prov = await fetchJsonSafe(base + "/provision");
+    const pretty = "Danh tính + cấu hình đã lưu (GET /provision):\n" +
+      (prov.json ? JSON.stringify(prov.json, null, 2) : prov.text);
 
     out.textContent = "✓ Tới được " + base + "\n\n" + pretty;
     out.className =

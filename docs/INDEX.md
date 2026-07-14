@@ -14,7 +14,7 @@
 ### Cập nhật 2026-07-02 (đợt tinh chỉnh theo góp ý nhóm)
 - ✅ **Firmware NVS-first, hardcode-fallback** + vào provisioning bằng **giữ nút BOOT** (thay vì "chưa cấu hình"): nạp là chạy ngay khi dev, vẫn cấu hình lại được qua app.
 - ✅ **Tài khoản Firebase của thiết bị hardcode trong firmware** (`HC_DEV_EMAIL`/`HC_DEV_PASS`) — app không hỏi nữa.
-- ✅ **App gọn**: chỉ WiFi + MAC, có **2 checkbox (WiFi/MAC) gửi từng phần** + nút **test `/info`** (chẩn đoán) + trạng thái online. Firmware `POST /provision` hỗ trợ **partial update** (nhận cả `peerMac`/`mac_gateway`).
+- ✅ **App gọn**: chỉ WiFi + MAC, có **2 checkbox (WiFi/MAC) gửi từng phần** + nút **test `GET /provision`** (chẩn đoán, gộp cả danh tính lẫn cấu hình đã lưu) + trạng thái online. Firmware `POST /provision` hỗ trợ **partial update** (nhận cả `peerMac`/`mac_gateway`).
 - ✅ **Web phát hiện online/offline theo `lastSeen`** (timer client), **không** dựa cờ `esp1Online`, **không cần backend**.
 - ✅ **Gộp ghi Firebase**: `/sensor` + `/status` mỗi node 1 `setJSON` (2 request thay vì 9) → nhẹ tải ESP.
 - 📌 **Chốt hướng provisioning:** giữ **PWA tự viết** (SoftAP + REST), KHÔNG dùng app Espressif chính chủ.

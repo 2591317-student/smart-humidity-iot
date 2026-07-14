@@ -206,6 +206,23 @@ export async function writePumpManual(on, email) {
 }
 
 /**
+ * Sửa lại field /status/esp1Online khi frontend tự phát hiện lệch so với lastSeen thực tế
+ * (xem app.js renderOnline/maybeCorrectEsp1Online). Field này do ESP tự ghi và KHÔNG tự sửa
+ * khi mất mạng — nên khi có admin đang mở web, web tiện tay sửa luôn cho field thô trong
+ * Firebase Console cũng đúng. KHÔNG phải nguồn sự thật cho label web (label luôn tự tính
+ * từ lastSeen, đúng ngay cả khi field này lệch) — xem CONTRACT.md.
+ * @param {boolean} online
+ */
+export async function correctEsp1Online(online) {
+  if (!db) return;
+  try {
+    await update(ref(db, "status"), { esp1Online: !!online });
+  } catch (e) {
+    console.warn("[db] Không sửa được /status/esp1Online (bỏ qua, không ảnh hưởng label web):", e);
+  }
+}
+
+/**
  * Định dạng thời gian địa phương "YYYY-MM-DD HH:MM:SS" (khớp ví dụ trong CONTRACT).
  * @param {Date} d
  */

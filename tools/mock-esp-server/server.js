@@ -7,7 +7,7 @@
  * Tuân theo CONTRACT.md mục 5 (REST provisioning) và mục 6 (QR payload).
  *
  * Endpoint mô phỏng:
- *   GET  /info       -> thông tin thiết bị (JSON)
+ *   GET  /provision  -> danh tính thiết bị + cấu hình ĐÃ GHI (JSON) — gộp chung, không còn /info riêng
  *   POST /provision  -> nhận cấu hình WiFi + tài khoản thiết bị, log ra console, trả {ok,message,mac}
  *   POST /reset      -> xoá cấu hình (mô phỏng), quay về chưa provisioned
  *   GET  /           -> trang HTML form provisioning same-origin (fallback luôn hoạt động)
@@ -58,18 +58,6 @@ app.use(express.json());
 app.use((req, _res, next) => {
   console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
   next();
-});
-
-// ---- GET /info -----------------------------------------------------------------
-// Trả thông tin thiết bị (CONTRACT mục 5).
-app.get('/info', (_req, res) => {
-  res.json({
-    id: DEVICE.id,
-    role: DEVICE.role,
-    mac: DEVICE.macFull,
-    fw: DEVICE.fw,
-    provisioned: provisioned,
-  });
 });
 
 // ---- POST /provision -----------------------------------------------------------
@@ -131,10 +119,15 @@ app.post('/provision', (req, res) => {
 });
 
 // ---- GET /provision --------------------------------------------------------------
-// Đọc lại thông tin ĐÃ GHI qua POST /provision (mô phỏng đọc lại NVS). Không trả mật
-// khẩu WiFi thật, chỉ báo có/không (khớp firmware provisioning.cpp::handleGetProvision).
+// Danh tính thiết bị + đọc lại cấu hình ĐÃ GHI qua POST /provision (mô phỏng đọc lại NVS).
+// Gộp chung (trước đây tách /info + /provision, gây nhầm lẫn) — khớp firmware
+// provisioning.cpp::handleGetProvision. Không trả mật khẩu WiFi thật, chỉ báo có/không.
 app.get('/provision', (_req, res) => {
   res.json({
+    id: DEVICE.id,
+    role: DEVICE.role,
+    mac: DEVICE.macFull,
+    fw: DEVICE.fw,
     ssid: (lastConfig && lastConfig.ssid) || '',
     hasPassword: !!(lastConfig && lastConfig.password),
     peerMac: (lastConfig && lastConfig.peerMac) || '',
@@ -189,7 +182,7 @@ app.listen(PORT, () => {
   console.log(`    ap    : ${DEVICE.ap}`);
   console.log(`    mac   : ${DEVICE.macFull}`);
   console.log('  Endpoint:');
-  console.log(`    GET  http://localhost:${PORT}/info`);
+  console.log(`    GET  http://localhost:${PORT}/provision`);
   console.log(`    POST http://localhost:${PORT}/provision`);
   console.log(`    POST http://localhost:${PORT}/reset`);
   console.log(`    POST http://localhost:${PORT}/reboot`);

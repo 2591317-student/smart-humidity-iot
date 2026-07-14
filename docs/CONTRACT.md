@@ -103,12 +103,18 @@ lật sang "Mất kết nối" khi `lastSeen` quá hạn — **không cần back
 > bình thường, chỉ là không ai suy ra trạng thái). Muốn cảnh báo dù không ai mở web (email/SMS...) thì
 > cần Cloud Functions chạy trên server — ngoài phạm vi hiện tại.
 >
-> **Cập nhật chính field `/status/esp1Online` kể cả khi không mở web:** dùng
-> `tools/presence-watcher` — 1 script Node chạy độc lập (không phải Cloud Functions, không cần
-> Blaze), đăng nhập bằng tài khoản thiết bị, tự ghi `esp1Online=false` khi `lastSeen` quá hạn. Lưu ý
-> thư viện Firebase mobizt trên ESP32 **không hỗ trợ `onDisconnect()`** (đã kiểm tra: không có trong
-> mã nguồn thư viện) nên ESP không tự làm được việc này — phải qua tool ngoài như trên. Tool này vẫn
-> cần một máy chạy nó liên tục (xem `tools/presence-watcher/README.md`).
+> **Field `/status/esp1Online` tự sửa lại khi có admin đang mở web:** `app.js` (hàm
+> `maybeCorrectEsp1Online`) so `online` tự tính ở trên với `status.esp1Online` hiện có — lệch thì
+> gọi `db.js#correctEsp1Online()` ghi đè lại (rules cho phép **admin** ghi riêng field này, xem
+> `firebase/database.rules.json`). Mục đích: ai xem trực tiếp Firebase Console (không qua web) cũng
+> thấy đúng, KHÔNG phải nguồn sự thật cho label web (label luôn đúng nhờ tự tính từ `lastSeen`, kể cả
+> khi field này đang lệch). Giống hạn chế ở trên: chỉ tự sửa khi có admin đang mở tab web; đội quyết
+> định không cần chạy backend 24/7 cho việc này — chấp nhận field thô có thể trễ tới khi ai đó mở web.
+> Thư viện Firebase mobizt trên ESP32 cũng **không hỗ trợ `onDisconnect()`** (đã kiểm tra: không có
+> trong mã nguồn thư viện) nên ESP không thể tự báo offline được.
+>
+> `tools/presence-watcher` (script Node chạy độc lập, cùng cơ chế nhưng chạy 24/7 không cần mở web)
+> vẫn còn trong repo nhưng **không bắt buộc dùng** — team đã chọn hướng đơn giản ở trên.
 
 ---
 
@@ -181,12 +187,6 @@ Khi vào chế độ **SoftAP**:
 
 ### Endpoints
 
-`GET /info` → thông tin thiết bị (JSON):
-```json
-{ "id": "MAIN-A1B2C3", "role": "main", "mac": "A0:B1:C2:A1:B2:C3",
-  "fw": "1.0.0", "provisioned": false }
-```
-
 `POST /provision` (Content-Type: application/json) → nạp cấu hình MẠNG (bản gọn):
 ```json
 {
@@ -223,9 +223,12 @@ Sau khi lưu Preferences thành công → trả response → `delay(1000)` → `
 > trong `docs/TIEN-DO-2026-07-02.md`). Firmware trong repo vẫn PHẢI trả đúng `{"ok":true,...}` —
 > đây chỉ là lớp phòng thủ phía client, không phải đổi chuẩn.
 
-`GET /provision` → đọc lại thông tin **ĐÃ GHI** qua `POST /provision` (không cần xem Serial):
+`GET /provision` → danh tính thiết bị + đọc lại cấu hình **ĐÃ GHI** qua `POST /provision` (không cần
+xem Serial). Gộp chung 1 endpoint (trước đây tách riêng `/info`, gây nhầm lẫn khi trao đổi — nay bỏ
+`/info`, dùng `/provision` cho cả 2 việc):
 ```json
-{ "ssid": "TenWiFiNha", "hasPassword": true, "peerMac": "11:22:33:44:55:66", "provisioned": true }
+{ "id": "MAIN-A1B2C3", "role": "main", "mac": "A0:B1:C2:A1:B2:C3", "fw": "1.0.0",
+  "ssid": "TenWiFiNha", "hasPassword": true, "peerMac": "11:22:33:44:55:66", "provisioned": true }
 ```
 Không trả mật khẩu WiFi thật (chỉ báo `hasPassword` có/không) để tránh lộ khi ai đó dò ra IP AP.
 

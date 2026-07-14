@@ -180,10 +180,9 @@ toàn Local Network Access/mixed-content vì là HTTP same-origin từ đầu.
 
 | Method · Endpoint | Ý nghĩa |
 |---|---|
-| `GET /info` | `{id, role, mac, fw, provisioned}` |
 | `GET /` | trang HTML form same-origin (fallback luôn chạy) |
 | `POST /provision` | nhận JSON cấu hình → lưu Preferences → reboot |
-| `GET /provision` | đọc lại `{ssid, hasPassword, peerMac, provisioned}` đã lưu (không trả mật khẩu thật) |
+| `GET /provision` | danh tính + cấu hình đã lưu: `{id, role, mac, fw, ssid, hasPassword, peerMac, provisioned}` (không trả mật khẩu thật) |
 | `POST /reset` | xoá Preferences (demo lại) |
 | `POST /reboot` | `{action:true}` → khởi động lại ESP (chỉ khi đang ở SoftAP) |
 | `OPTIONS *` | preflight CORS (trả 204) |
@@ -288,7 +287,7 @@ Cùng một logic được hiện thực ở 3 nơi (giữ nhất quán): firmwa
 - **Giữ PWA tự viết cho provisioning** (SoftAP + REST) thay vì app Espressif chính chủ: app chính chủ
   thiên về dev (cần đọc QR/POP qua terminal); luồng "nối AP → gọi API" tự viết đơn giản & consumer hơn.
   Giới hạn đã biết: PWA (web) không đọc được SSID/IP điện thoại và không auto-connect WiFi (đó là khả
-  năng của app native/SmartConfig) — nên có nút test `/info` để chẩn đoán thay thế.
+  năng của app native/SmartConfig) — nên có nút test `/provision` (GET) để chẩn đoán thay thế.
 - **Chống tràn flash/RAM trên ESP1** (thư viện Firebase rất nặng): đổi `board_build.partitions` sang
   `huge_app.csv` (bỏ vùng OTA thứ 2 không dùng tới, dồn ~3MB cho 1 vùng app duy nhất, tránh "Sketch
   too big"); và đổi `/config` từ **stream** sang **poll ~10s** bằng CHÍNH `fbdo` đang dùng để ghi

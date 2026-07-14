@@ -15,7 +15,7 @@ import { initAuth, loginWithGoogle, logout, watchAuth, describeAuthError } from 
 import {
   initDb, checkIsAdmin,
   listenSensor, listenStatus, listenConfig, listenWebSettings,
-  writeConfig, writePumpManual, writeWebSettings
+  writeConfig, writePumpManual, writeWebSettings, correctEsp1Online
 } from "./db.js";
 import { initChart, pushPoint, clearChart } from "./chart.js";
 import { initAlarm, armAudio, updateAlarm, disposeAlarm } from "./alarm.js";
@@ -277,6 +277,7 @@ const ONLINE_TIMEOUT_DEFAULT_S = 15;  // fallback khi /webSettings chưa có onl
 let g_onlineTimeoutSec = ONLINE_TIMEOUT_DEFAULT_S; // lấy từ /webSettings — align với chu kỳ push firmware
 let g_lastStatus = null;       // /status gần nhất (để timer re-check)
 let g_onlineTimer = null;      // timer tự lật offline khi lastSeen quá hạn
+let g_correctingOnline = false; // chặn ghi chồng khi đang chờ round-trip ghi /status/esp1Online
 
 function isDeviceOnline(st) {
   if (!st) return false;
@@ -291,6 +292,18 @@ function renderOnline() {
   els.onlineDot.className = "dot " + (online ? "dot-online" : "dot-offline");
   els.onlineText.textContent = online ? "Trực tuyến" : "Mất kết nối";
   els.onlineText.className = online ? "text-green-400 font-medium" : "text-gray-400 font-medium";
+  maybeCorrectEsp1Online(online);
+}
+
+// Field /status/esp1Online do ESP tự ghi, không tự sửa khi mất mạng (xem CONTRACT.md).
+// Khi có admin đang mở web, tiện tay sửa lại field thô này cho khớp — CHỈ để ai xem trực
+// tiếp Firebase Console cũng thấy đúng, KHÔNG phải nguồn sự thật cho label trên (label luôn
+// tự tính từ lastSeen ở renderOnline(), đúng ngay cả khi field này đang lệch).
+function maybeCorrectEsp1Online(online) {
+  if (!isAdmin || g_correctingOnline || !g_lastStatus) return;
+  if (typeof g_lastStatus.esp1Online !== "boolean" || g_lastStatus.esp1Online === online) return;
+  g_correctingOnline = true;
+  correctEsp1Online(online).finally(() => { g_correctingOnline = false; });
 }
 
 // ============================================================================

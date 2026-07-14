@@ -90,7 +90,7 @@ Mở web dashboard → đăng nhập admin → thấy số liệu & biểu đồ
 ```bash
 cd tools/mock-esp-server
 npm install
-npm start            # giả lập REST /info, /provision của ESP tại http://localhost:8080
+npm start            # giả lập REST /provision (GET+POST) của ESP tại http://localhost:8080
 ```
 Mở PWA (`mobile/`) qua HTTP local (vd `npx serve mobile` rồi mở `http://localhost:3000`) →
 quét QR mẫu (in trong log của mock-server, hoặc file `docs/`) → nhập WiFi → POST → thấy response.

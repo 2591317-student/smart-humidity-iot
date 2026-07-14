@@ -42,9 +42,10 @@ dùng PWA đầy đủ bên dưới.
    - **WiFi**: tên WiFi nhà (SSID) + mật khẩu.
    - **MAC của ESP còn lại**: **gõ tay** hoặc bấm **Quét QR** in trên ESP kia để điền nhanh. (Để trống
      cũng được — ESP-NOW vẫn nhận broadcast.)
-4. (Tuỳ chọn) **Kiểm tra kết nối** — nút gọi `GET /info` để xác nhận điện thoại tới được ESP + xem ESP
-   báo về (role, MAC, đã cấu hình chưa). Lưu ý: trình duyệt **không** đọc được tên WiFi / IP của điện
-   thoại (giới hạn bảo mật web), nên phần chẩn đoán dựa vào `/info` của ESP.
+4. (Tuỳ chọn) **Kiểm tra kết nối** — nút gọi `GET /provision` để xác nhận điện thoại tới được ESP + xem
+   ESP báo về danh tính (role, MAC, đã cấu hình chưa) và cấu hình đã lưu (SSID, peerMac). Lưu ý: trình
+   duyệt **không** đọc được tên WiFi / IP của điện thoại (giới hạn bảo mật web), nên phần chẩn đoán dựa
+   vào `/provision` của ESP.
 5. **Gửi cấu hình** → POST JSON tới `http://<ip>/provision`. App hiển thị rõ kết quả + **response thô
    (raw JSON)** từ thiết bị. ESP tự khởi động lại và vào mạng nhà.
 5. **Chế độ Test** (trong "Tuỳ chọn nâng cao"): POST tới `http://localhost:8080` (`tools/mock-esp-server`)
