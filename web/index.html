@@ -81,6 +81,13 @@
           </div>
 
           <div class="flex items-center gap-3">
+            <!-- Chip online/offline (2026-07-14) — header dính khi cuộn nên trạng thái
+                 thiết bị LUÔN nhìn thấy được, kể cả đang ở cuối trang. app.js#renderOnline
+                 cập nhật cùng lúc với dòng trạng thái giữa trang. -->
+            <span class="flex items-center gap-1.5 bg-white/5 border border-white/10 rounded-full px-3 py-1.5 shrink-0">
+              <span id="hdrOnlineDot" class="dot dot-offline"></span>
+              <span id="hdrOnlineText" class="text-xs font-medium text-slate-400">—</span>
+            </span>
             <div class="hidden sm:flex flex-col items-end leading-tight">
               <div class="flex items-center gap-2">
                 <span id="userName" class="text-white font-semibold text-sm truncate max-w-[160px]"></span>
@@ -102,21 +109,33 @@
     <!-- Nội dung -->
     <div class="max-w-6xl mx-auto w-full px-4 py-6 flex-1 space-y-6">
 
-      <!-- Hàng metric + trạng thái online -->
-      <section class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <!-- Nhiệt độ -->
+      <!-- Hàng metric + trạng thái online. id metricSection: app.js làm mờ cả hàng khi
+           mất kết nối (dữ liệu đang xem là dữ liệu CŨ, tránh tưởng nhầm là số liệu sống). -->
+      <section id="metricSection" class="grid grid-cols-1 sm:grid-cols-2 gap-4 transition-opacity duration-500">
+        <!-- Nhiệt độ. class skeleton: khối xám nhấp nháy khi chưa có dữ liệu,
+             app.js gỡ ở lần nhận /sensor đầu tiên. -->
         <div class="glass rounded-2xl p-6 flex items-center justify-between">
           <div>
             <p class="text-slate-400 text-sm mb-1">Nhiệt độ</p>
-            <p class="text-white"><span id="tempValue" class="metric-value text-5xl font-extrabold">--</span><span class="text-2xl font-semibold text-slate-300"> °C</span></p>
+            <p class="text-white"><span id="tempValue" class="metric-value text-5xl font-extrabold skeleton">--</span><span class="text-2xl font-semibold text-slate-300"> °C</span></p>
           </div>
           <div class="text-5xl">🌡️</div>
         </div>
-        <!-- Độ ẩm -->
-        <div class="glass rounded-2xl p-6 flex items-center justify-between">
-          <div>
+        <!-- Độ ẩm + vị trí so với ngưỡng Deadband (thanh mini + 1 dòng ngữ cảnh,
+             app.js#renderHumContext cập nhật từ /sensor + /config). -->
+        <div class="glass rounded-2xl p-6 flex items-center justify-between gap-4">
+          <div class="flex-1 min-w-0">
             <p class="text-slate-400 text-sm mb-1">Độ ẩm</p>
-            <p class="text-white"><span id="humValue" class="metric-value text-5xl font-extrabold">--</span><span class="text-2xl font-semibold text-slate-300"> %RH</span></p>
+            <p class="text-white"><span id="humValue" class="metric-value text-5xl font-extrabold skeleton">--</span><span class="text-2xl font-semibold text-slate-300"> %RH</span></p>
+            <div id="humMeter" hidden class="mt-3">
+              <div class="relative h-1.5 rounded-full bg-white/10">
+                <!-- Vùng ổn định Min..Max (tô nhạt) -->
+                <div id="humZone" class="absolute inset-y-0 bg-sky-400/30 rounded-full"></div>
+                <!-- Chấm = độ ẩm hiện tại -->
+                <div id="humDot" class="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-3 h-3 rounded-full bg-white shadow transition-all duration-500"></div>
+              </div>
+            </div>
+            <p id="humContext" class="text-xs text-slate-500 mt-1.5">—</p>
           </div>
           <div class="text-5xl">💦</div>
         </div>
@@ -137,7 +156,7 @@
         <div class="grid grid-cols-1 gap-4">
           <div class="bg-white/5 rounded-xl p-4 flex flex-col gap-2">
             <span class="text-slate-400 text-sm">Máy phun sương</span>
-            <span id="stMist" class="px-3 py-1 rounded-full text-sm font-semibold bg-gray-600/30 text-gray-300 w-max">—</span>
+            <span id="stMist" class="px-3 py-1 rounded-full text-sm font-semibold bg-gray-600/30 text-gray-300 w-max skeleton">—</span>
           </div>
           <!-- Bơm châm nước — TẠM ẨN (2026-07-14): chưa có phần cứng bơm thật, badge trạng thái
                + nút điều khiển thủ công gây hiểu nhầm (bấm nút không làm badge đổi vì ESP1 chưa
@@ -158,38 +177,91 @@
           -->
         </div>
 
-        <!-- Mức nước — khối riêng to hơn, gauge SCADA có hiệu ứng sóng gợn (2026-07-14). -->
-        <div class="mt-4 bg-white/5 rounded-xl p-5 flex items-center gap-6 flex-wrap sm:flex-nowrap">
-          <svg viewBox="0 0 40 64" class="w-20 h-36 shrink-0 drop-shadow-lg">
+        <!-- Mức nước — BỒN TRỤ 3D kiểu SCADA (2026-07-14): nắp elip + vỏ ánh kim + chân đế,
+             nước dâng/hạ theo mức thật, mặt sóng parallax luôn chuyển động, % ở giữa bồn. -->
+        <div class="mt-4 bg-white/5 rounded-xl p-5 flex items-center justify-center gap-8 flex-wrap sm:flex-nowrap">
+          <svg viewBox="0 0 140 175" class="w-40 h-auto shrink-0 drop-shadow-xl">
             <defs>
-              <clipPath id="tankClip"><rect x="2" y="2" width="36" height="60" rx="8" /></clipPath>
+              <!-- Lòng bồn = thân trụ + 2 chỏm elip: nước chỉ hiện trong vùng này -->
+              <clipPath id="tankClip">
+                <path d="M 20,30 V 140 A 50 12 0 0 0 120,140 V 30 A 50 12 0 0 0 20,30 Z" />
+              </clipPath>
+              <!-- Vỏ bồn ánh kim loại (sáng 2 mép, tối ở giữa) -->
+              <linearGradient id="tankShell" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0" stop-color="#334155" />
+                <stop offset="0.18" stop-color="#94a3b8" />
+                <stop offset="0.5" stop-color="#1e293b" />
+                <stop offset="0.82" stop-color="#94a3b8" />
+                <stop offset="1" stop-color="#334155" />
+              </linearGradient>
+              <!-- Vệt sáng "thủy tinh" dọc mép trái, phủ lên cả nước cho khối trông cong -->
+              <linearGradient id="tankSheen" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0" stop-color="rgba(255,255,255,0.22)" />
+                <stop offset="0.35" stop-color="rgba(255,255,255,0.05)" />
+                <stop offset="1" stop-color="rgba(255,255,255,0)" />
+              </linearGradient>
             </defs>
-            <rect x="2" y="2" width="36" height="60" rx="8" fill="#0f172a" />
+
+            <!-- Chân đế -->
+            <path d="M 32,146 L 24,170 h 9 l 7,-19 Z" fill="#334155" />
+            <path d="M 108,146 L 116,170 h -9 l -7,-19 Z" fill="#334155" />
+
+            <!-- Nền lòng bồn (phần chưa có nước) -->
+            <path d="M 20,30 V 140 A 50 12 0 0 0 120,140 V 30 A 50 12 0 0 0 20,30 Z" fill="#0b1220" />
+
             <g clip-path="url(#tankClip)">
-              <rect id="stTankFill" x="2" y="2" width="36" height="60"
+              <!-- Khối nước: JS (app.js#renderStatus) set scaleY theo mức 0-3, neo đáy y=152 -->
+              <rect id="stTankFill" x="20" y="18" width="100" height="134"
                     fill="#475569" class="transition-transform duration-700 ease-out"
-                    style="transform-origin: 20px 62px; transform: scaleY(0);" />
-              <!-- Mặt nước: nhóm ngoài (#stTankWave) di chuyển lên/xuống theo MỨC NƯỚC thật
-                   (translateY, JS set trong app.js#renderStatus, đổi khi tank đổi mức). Nhóm
-                   trong (.tank-wave-bob) tự BẬP BỀNH liên tục (CSS keyframes) — mô phỏng nước
-                   luôn "sống", không đứng yên như hình tĩnh. 2 lớp sóng cuộn ngang tốc độ khác
-                   nhau (parallax) để trông giống nước thật hơn 1 lớp phẳng. -->
-              <g id="stTankWave" style="transform: translateY(62px); transition: transform .7s ease-out;">
+                    style="transform-origin: 70px 152px; transform: scaleY(0);" />
+              <!-- Mặt nước: nhóm ngoài (#stTankWave) JS đặt translateY theo MỨC NƯỚC thật;
+                   nhóm trong (.tank-wave-bob) bập bềnh liên tục; 2 lớp sóng cuộn ngang
+                   tốc độ khác nhau (parallax) — xem styles.css. -->
+              <g id="stTankWave" style="transform: translateY(152px); transition: transform .7s ease-out;">
                 <g class="tank-wave-bob">
                   <path class="tank-wave-back"
-                        d="M -20,0 Q -10,-3 0,0 T 20,0 T 40,0 T 60,0 T 80,0 V 8 H -20 Z"
-                        fill="rgba(255,255,255,.16)" />
+                        d="M 0,0 Q 10,-3 20,0 T 40,0 T 60,0 T 80,0 T 100,0 T 120,0 T 140,0 T 160,0 T 180,0 V 16 H 0 Z"
+                        fill="rgba(255,255,255,0.16)" />
                   <path class="tank-wave-front"
-                        d="M -20,1 Q -12,-1.6 -4,1 T 12,1 T 28,1 T 44,1 T 60,1 T 76,1 V 8 H -20 Z"
-                        fill="rgba(255,255,255,.32)" />
+                        d="M 0,1 Q 8,-2.2 16,1 T 32,1 T 48,1 T 64,1 T 80,1 T 96,1 T 112,1 T 128,1 T 144,1 T 160,1 T 176,1 T 192,1 V 16 H 0 Z"
+                        fill="rgba(255,255,255,0.32)" />
                 </g>
               </g>
+              <!-- Vệt sáng phủ trên cùng để thân bồn trông cong (3D) -->
+              <rect x="20" y="18" width="100" height="134" fill="url(#tankSheen)" pointer-events="none" />
             </g>
-            <rect x="2" y="2" width="36" height="60" rx="8" fill="none" stroke="#475569" stroke-width="2" />
+
+            <!-- Viền thân bồn -->
+            <path d="M 20,30 V 140 A 50 12 0 0 0 120,140 V 30" fill="none" stroke="url(#tankShell)" stroke-width="3" />
+            <!-- Nắp bồn (elip trên) + núm van -->
+            <rect x="62" y="12" width="16" height="10" rx="3" fill="#475569" />
+            <ellipse cx="70" cy="30" rx="50" ry="12" fill="#1e293b" stroke="url(#tankShell)" stroke-width="3" />
+            <ellipse cx="70" cy="30" rx="36" ry="7" fill="#0f172a" opacity="0.55" />
+
+            <!-- % mức nước — JS set trong renderStatus; viền tối để đọc rõ trên mọi nền -->
+            <text id="stTankPct" x="70" y="100" text-anchor="middle"
+                  font-size="24" font-weight="700" fill="#e2e8f0"
+                  style="paint-order: stroke; stroke: rgba(2,6,23,0.6); stroke-width: 4px;">—</text>
           </svg>
-          <div class="flex flex-col gap-2 min-w-0">
+          <div class="flex flex-col gap-3 min-w-0">
             <span class="text-slate-400 text-sm">Mức nước</span>
-            <span id="stTank" class="px-3 py-1 rounded-full text-base font-semibold bg-gray-600/30 text-gray-300 w-max">—</span>
+            <span id="stTank" class="px-3 py-1 rounded-full text-base font-semibold bg-gray-600/30 text-gray-300 w-max skeleton">—</span>
+            <!-- Thang 4 mức (CONTRACT mục 2): JS (app.js#renderStatus) làm sáng dòng đang
+                 active, mờ các dòng còn lại — nhìn vào biết ngay bồn đang ở nấc nào. -->
+            <ul id="tankLegend" class="mt-1 flex flex-col gap-1.5 text-sm text-slate-500">
+              <li data-tank-level="3" class="flex items-center gap-2 transition-opacity">
+                <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background:#22c55e"></span>Đầy — 3/3 đầu dò ngập
+              </li>
+              <li data-tank-level="2" class="flex items-center gap-2 transition-opacity">
+                <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background:#38bdf8"></span>Bình thường — 2/3
+              </li>
+              <li data-tank-level="1" class="flex items-center gap-2 transition-opacity">
+                <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background:#f59e0b"></span>Thấp — 1/3
+              </li>
+              <li data-tank-level="0" class="flex items-center gap-2 transition-opacity">
+                <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background:#ef4444"></span>Rất thấp — cần châm nước
+              </li>
+            </ul>
           </div>
         </div>
 
@@ -331,6 +403,11 @@
       </div>
     </footer>
   </div>
+
+  <!-- Toast thông báo nổi (góc phải dưới) — app.js#showToast tạo từng mẩu vào đây,
+       tự trượt lên khi hiện và tự biến mất sau vài giây (thay dòng text chèn dưới form,
+       dễ bị bỏ qua). pointer-events-none để không chặn click phần tử bên dưới. -->
+  <div id="toastWrap" class="fixed bottom-4 right-4 z-50 flex flex-col items-end gap-2 pointer-events-none"></div>
 
   <!-- App entry (ESM) -->
   <script type="module" src="./js/app.js"></script>

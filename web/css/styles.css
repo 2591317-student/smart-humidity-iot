@@ -155,26 +155,65 @@ select option {
  *      ngang tốc độ khác nhau (parallax), trông giống nước thật hơn 1 lớp phẳng.
  * -------------------------------------------------------------------------- */
 @keyframes tankWaveBob {
-  0%, 100% { transform: translateY(-1.2px); }
-  50%      { transform: translateY(1.2px); }
+  0%, 100% { transform: translateY(-1.6px); }
+  50%      { transform: translateY(1.6px); }
 }
 .tank-wave-bob {
   animation: tankWaveBob 2.6s ease-in-out infinite;
 }
 
+/* Cuộn ngang đúng 1 CHU KỲ sóng (bước sóng back=40px, front=32px — khớp path trong
+   index.html) rồi lặp — hết chu kỳ hình sóng trùng khít nên loop không bị "giật". */
 @keyframes tankWaveScrollBack {
   from { transform: translateX(0); }
-  to   { transform: translateX(-20px); }
+  to   { transform: translateX(-40px); }
 }
 @keyframes tankWaveScrollFront {
   from { transform: translateX(0); }
-  to   { transform: translateX(-16px); }
+  to   { transform: translateX(-32px); }
 }
 .tank-wave-back {
-  animation: tankWaveScrollBack 3.2s linear infinite;
+  animation: tankWaveScrollBack 5s linear infinite;
 }
 .tank-wave-front {
-  animation: tankWaveScrollFront 2s linear infinite reverse;
+  animation: tankWaveScrollFront 3.2s linear infinite reverse;
+}
+
+/* ----------------------------------------------------------------------------
+ *  Skeleton loading (2026-07-14) — khối xám nhấp nháy thay cho "--"/"—" trơ trọi
+ *  lúc mới vào trang, chờ dữ liệu Firebase về. Gắn class ngay trong HTML,
+ *  app.js gỡ ở lần render dữ liệu thật đầu tiên.
+ *  color: transparent giữ nguyên chữ bên trong -> phần tử giữ đúng kích thước,
+ *  không bị nhảy layout khi skeleton biến mất.
+ * -------------------------------------------------------------------------- */
+@keyframes skeletonPulse {
+  0%, 100% { opacity: 0.45; }
+  50%      { opacity: 0.9; }
+}
+.skeleton {
+  color: transparent !important;
+  background: rgba(148, 163, 184, 0.2) !important;
+  border-radius: 0.5rem;
+  animation: skeletonPulse 1.4s ease-in-out infinite;
+  user-select: none;
+  pointer-events: none;
+}
+
+/* ----------------------------------------------------------------------------
+ *  Toast thông báo nổi (2026-07-14) — app.js#showToast tạo phần tử .toast-item
+ *  trong #toastWrap: trượt lên khi hiện, thêm .toast-out để mờ dần rồi remove.
+ * -------------------------------------------------------------------------- */
+@keyframes toastIn {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.toast-item {
+  animation: toastIn 0.3s ease both;
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+.toast-item.toast-out {
+  opacity: 0;
+  transform: translateY(8px);
 }
 
 /* --- Spinner nhỏ khi đang xử lý --- */

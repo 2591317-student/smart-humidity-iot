@@ -17,7 +17,7 @@ import {
   listenSensor, listenStatus, listenConfig, listenWebSettings,
   writeConfig, /* writePumpManual, */ writeWebSettings, correctEsp1Online
 } from "./db.js";
-import { initChart, pushPoint, clearChart } from "./chart.js";
+import { initChart, pushPoint, clearChart, setDeadbandBand } from "./chart.js";
 import { initAlarm, armAudio, updateAlarm, disposeAlarm } from "./alarm.js";
 
 console.log(`[app] Smart Humidity IoT — Firebase SDK v${FIREBASE_SDK_VERSION}`);
@@ -44,16 +44,25 @@ const els = {
   btnLogout: $("btnLogout"),
   adminBadge: $("adminBadge"),
   // Metric
+  metricSection: $("metricSection"), // cả hàng metric — làm mờ khi mất kết nối
   tempValue: $("tempValue"),
   humValue: $("humValue"),
+  humMeter: $("humMeter"), // thanh vị trí độ ẩm so với ngưỡng — xem renderHumContext
+  humZone: $("humZone"),
+  humDot: $("humDot"),
+  humContext: $("humContext"), // dòng ngữ cảnh "đang ở đâu so với Min/Max"
   updatedAt: $("updatedAt"),
   onlineDot: $("onlineDot"),
   onlineText: $("onlineText"),
+  hdrOnlineDot: $("hdrOnlineDot"), // chip online/offline trên header (luôn thấy khi cuộn)
+  hdrOnlineText: $("hdrOnlineText"),
   // Status panel
   stMist: $("stMist"),
   stTank: $("stTank"),
   stTankFill: $("stTankFill"), // tank gauge SVG (bình chứa) — xem renderStatus
   stTankWave: $("stTankWave"), // dải sóng gợn trên mặt nước — xem renderStatus
+  stTankPct: $("stTankPct"), // chữ % mức nước giữa bồn — xem renderStatus
+  tankLegend: $("tankLegend"), // thang chú giải 4 mức cạnh bồn — xem renderStatus
   // Bơm châm nước — TẠM ẨN (2026-07-14, xem web/index.html + docs/TIEN-DO-2026-07-02.md).
   // stPump: $("stPump"),
   // Gateway — TẠM ẨN (2026-07-14, xem web/index.html + docs/TIEN-DO-2026-07-02.md).
@@ -80,7 +89,9 @@ const els = {
   cfgLastUpdate: $("cfgLastUpdate"),
   cfgUpdatedBy: $("cfgUpdatedBy"),
   // Alarm
-  alarmBox: $("alarmBox")
+  alarmBox: $("alarmBox"),
+  // Toast nổi góc phải dưới — xem showToast
+  toastWrap: $("toastWrap")
 };
 
 // ---- Trạng thái runtime -----------------------------------------------------
@@ -211,6 +222,14 @@ function leaveDashboard() {
   clearChart();
   isAdmin = false;
 
+  // Dừng timer online/updatedAt + reset state — tránh toast "kết nối lại" oan
+  // và đếm giờ sai khi đăng nhập lại phiên sau.
+  if (g_onlineTimer) { clearInterval(g_onlineTimer); g_onlineTimer = null; }
+  g_prevOnline = null;
+  g_lastStatus = null;
+  g_lastSensorTs = 0;
+  g_hasSensorData = false;
+
   // Reset form/UI.
   els.cfgMsg.hidden = true;
 
@@ -227,22 +246,27 @@ function attachListeners() {
     const t = typeof s.temperature === "number" ? s.temperature : null;
     const h = typeof s.humidity === "number" ? s.humidity : null;
 
-    els.tempValue.textContent = t !== null ? t.toFixed(1) : "--";
-    els.humValue.textContent = h !== null ? h.toFixed(1) : "--";
+    // Dữ liệu thật đã về — gỡ skeleton loading (đặt sẵn trong HTML).
+    els.tempValue.classList.remove("skeleton");
+    els.humValue.classList.remove("skeleton");
 
-    if (s.timestamp && s.timestamp > 0) {
-      els.updatedAt.textContent = "Cập nhật: " + new Date(s.timestamp * 1000).toLocaleString("vi-VN");
-    } else if (t !== null || h !== null) {
-      // Có số đo nhưng thiết bị chưa gửi mốc thời gian (chưa đồng bộ NTP) — KHÔNG hiển thị
-      // giờ máy client để tránh tưởng nhầm dữ liệu luôn "mới".
-      els.updatedAt.textContent = "Cập nhật: — (thiết bị chưa gửi mốc thời gian)";
-    } else {
-      els.updatedAt.textContent = "Cập nhật: —";
-    }
+    setMetric(els.tempValue, t); // số trượt mượt sang giá trị mới (count-up)
+    setMetric(els.humValue, h);
 
-    // Đẩy vào biểu đồ (chỉ khi có ít nhất 1 giá trị hợp lệ).
+    g_lastHum = h;
+    renderHumContext(); // vị trí độ ẩm so với ngưỡng Deadband
+
+    // Dòng "Cập nhật": lưu mốc rồi hiển thị dạng tương đối ("vừa xong", "X giây trước")
+    // — timer 5s trong attachListeners tự đếm tiếp khi không có dữ liệu mới.
+    g_hasSensorData = t !== null || h !== null;
+    g_lastSensorTs = s.timestamp && s.timestamp > 0 ? s.timestamp : 0;
+    renderUpdatedAt();
+
+    // Đẩy vào biểu đồ (chỉ khi có ít nhất 1 giá trị hợp lệ), kèm trạng thái máy phun
+    // TẠI THỜI ĐIỂM NÀY (từ /status gần nhất) để tô dải "đang phun" trên nền biểu đồ.
     if (t !== null || h !== null) {
-      pushPoint(t !== null ? t : NaN, h !== null ? h : NaN, s.timestamp);
+      const mistNow = g_lastStatus ? g_lastStatus.mist === true : null;
+      pushPoint(t !== null ? t : NaN, h !== null ? h : NaN, s.timestamp, mistNow);
     }
   }));
 
@@ -261,6 +285,15 @@ function attachListeners() {
   unsub.push(listenWebSettings((ws) => {
     renderWebSettings(ws);
   }));
+
+  // Timer 5s: tự lật offline khi ESP ngừng cập nhật (onValue chỉ bắn khi dữ liệu ĐỔI)
+  // + tự đếm tiếp dòng "Cập nhật: X giây trước". Dọn trong leaveDashboard.
+  if (!g_onlineTimer) {
+    g_onlineTimer = setInterval(() => {
+      renderOnline();
+      renderUpdatedAt();
+    }, 5000);
+  }
 }
 
 // ============================================================================
@@ -283,6 +316,16 @@ let g_lastStatus = null;       // /status gần nhất (để timer re-check)
 let g_onlineTimer = null;      // timer tự lật offline khi lastSeen quá hạn
 let g_correctingOnline = false; // chặn ghi chồng khi đang chờ round-trip ghi /status/esp1Online
 
+// Độ ẩm gần nhất + ngưỡng Min/Max từ /config — để renderHumContext() ghép 2 nguồn
+// (/sensor và /config về không cùng lúc, bên nào về sau thì gọi lại là đủ).
+let g_lastHum = null;
+let g_cfgMin = null;
+let g_cfgMax = null;
+
+let g_prevOnline = null;   // trạng thái online lần render trước — bắn toast khi ĐỔI (null = chưa biết)
+let g_lastSensorTs = 0;    // timestamp /sensor gần nhất (epoch giây) — cho dòng "Cập nhật: X trước"
+let g_hasSensorData = false; // đã từng nhận số đo (dù thiết bị chưa gửi timestamp)
+
 function isDeviceOnline(st) {
   if (!st) return false;
   const lastSeen = Number(st.lastSeen) || 0;
@@ -291,12 +334,136 @@ function isDeviceOnline(st) {
   return (nowSec - lastSeen) < g_onlineTimeoutSec;
 }
 
+// Đổi số giây thành chuỗi "X giây/phút/giờ trước" cho label mất kết nối.
+function formatAgo(sec) {
+  if (sec < 60) return sec + " giây trước";
+  const m = Math.floor(sec / 60);
+  if (m < 60) return m + " phút trước";
+  return Math.floor(m / 60) + " giờ trước";
+}
+
 function renderOnline() {
   const online = isDeviceOnline(g_lastStatus);
   els.onlineDot.className = "dot " + (online ? "dot-online" : "dot-offline");
-  els.onlineText.textContent = online ? "Trực tuyến" : "Mất kết nối";
+
+  // Khi offline: nói rõ dữ liệu cũ bao lâu (tính từ lastSeen) thay vì chỉ "Mất kết nối".
+  let offText = "Mất kết nối";
+  const lastSeen = g_lastStatus ? Number(g_lastStatus.lastSeen) || 0 : 0;
+  if (!online && lastSeen > 0) {
+    const age = Math.floor(Date.now() / 1000) - lastSeen;
+    if (age > 0) offText += " — dữ liệu cũ " + formatAgo(age);
+  }
+  els.onlineText.textContent = online ? "Trực tuyến" : offText;
   els.onlineText.className = online ? "text-green-400 font-medium" : "text-gray-400 font-medium";
+
+  // Chip trên header — cùng nội dung, nhưng LUÔN nhìn thấy vì header dính khi cuộn.
+  if (els.hdrOnlineDot) {
+    els.hdrOnlineDot.className = "dot " + (online ? "dot-online" : "dot-offline");
+    els.hdrOnlineText.textContent = online ? "Trực tuyến" : "Mất kết nối";
+    els.hdrOnlineText.className = "text-xs font-medium " + (online ? "text-green-400" : "text-slate-400");
+  }
+
+  // Làm mờ hàng metric khi offline — số đang xem là số CŨ, tránh tưởng là dữ liệu sống.
+  if (els.metricSection) {
+    els.metricSection.classList.toggle("opacity-50", !online);
+    els.metricSection.classList.toggle("saturate-50", !online);
+  }
+
+  // Toast khi trạng thái ĐỔI (không bắn ở lần render đầu — g_prevOnline còn null,
+  // tránh toast "kết nối lại" oan mỗi lần mở trang).
+  if (g_prevOnline !== null && g_prevOnline !== online) {
+    if (online) showToast("✓ Đã kết nối lại với thiết bị", "ok");
+    else showToast("⚠ Mất kết nối với thiết bị", "error");
+  }
+  g_prevOnline = online;
+
   maybeCorrectEsp1Online(online);
+}
+
+// Dòng "Cập nhật": thời gian TƯƠNG ĐỐI tự đếm (timer 5s gọi lại), hover hiện giờ đầy đủ.
+function renderUpdatedAt() {
+  if (g_lastSensorTs > 0) {
+    const age = Math.floor(Date.now() / 1000) - g_lastSensorTs;
+    // age < 5 (kể cả âm nhẹ do lệch đồng hồ ESP/máy client) -> "vừa xong"
+    els.updatedAt.textContent = "Cập nhật: " + (age < 5 ? "vừa xong" : formatAgo(age));
+    els.updatedAt.title = new Date(g_lastSensorTs * 1000).toLocaleString("vi-VN");
+  } else if (g_hasSensorData) {
+    // Có số đo nhưng thiết bị chưa gửi mốc thời gian (chưa đồng bộ NTP) — KHÔNG hiển thị
+    // giờ máy client để tránh tưởng nhầm dữ liệu luôn "mới".
+    els.updatedAt.textContent = "Cập nhật: — (thiết bị chưa gửi mốc thời gian)";
+    els.updatedAt.title = "";
+  } else {
+    els.updatedAt.textContent = "Cập nhật: —";
+    els.updatedAt.title = "";
+  }
+}
+
+// Số metric trượt mượt sang giá trị mới (count-up ~0.5s) thay vì nhảy đột ngột.
+// Giá trị đích lưu ở data-val: nếu giá trị MỚI HƠN đến giữa chừng, vòng rAF cũ tự
+// dừng (data-val không còn khớp) — không bao giờ có 2 animation giành nhau 1 phần tử.
+function setMetric(el, val) {
+  if (val === null) {
+    el.textContent = "--";
+    delete el.dataset.val;
+    return;
+  }
+  const from = Number(el.dataset.val);
+  el.dataset.val = String(val);
+  // Chưa có giá trị cũ (lần đầu) hoặc thay đổi quá nhỏ -> đặt thẳng.
+  if (!Number.isFinite(from) || Math.abs(from - val) < 0.05) {
+    el.textContent = val.toFixed(1);
+    return;
+  }
+  const t0 = performance.now();
+  const DUR = 500;
+  const step = (now) => {
+    if (el.dataset.val !== String(val)) return; // có giá trị mới hơn — nhường
+    const k = Math.min(1, (now - t0) / DUR);
+    const eased = 1 - Math.pow(1 - k, 3); // ease-out cubic
+    el.textContent = (from + (val - from) * eased).toFixed(1);
+    if (k < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
+// ============================================================================
+//  VỊ TRÍ ĐỘ ẨM SO VỚI NGƯỠNG DEADBAND (card Độ ẩm)
+//  Ghép /sensor (g_lastHum) + /config (g_cfgMin/g_cfgMax): thanh mini có vùng
+//  ổn định tô nhạt + chấm trắng ở vị trí hiện tại, kèm 1 dòng chữ nói thẳng
+//  "đang ở đâu -> máy phun làm gì" (logic Deadband, CONTRACT mục 3).
+// ============================================================================
+function renderHumContext() {
+  if (!els.humContext) return;
+  const h = g_lastHum, min = g_cfgMin, max = g_cfgMax;
+
+  if (h === null || min === null || max === null) {
+    if (els.humMeter) els.humMeter.hidden = true;
+    els.humContext.textContent = "—";
+    els.humContext.className = "text-xs text-slate-500 mt-1.5";
+    return;
+  }
+
+  // Thanh mini: vùng ổn định Min..Max + chấm ở vị trí độ ẩm (thang 0-100 %RH).
+  if (els.humMeter) {
+    els.humMeter.hidden = false;
+    const clamp = (v) => Math.max(0, Math.min(100, v));
+    els.humZone.style.left = clamp(min) + "%";
+    els.humZone.style.width = Math.max(0, clamp(max) - clamp(min)) + "%";
+    els.humDot.style.left = clamp(h) + "%";
+  }
+
+  // Dòng ngữ cảnh: dưới Min -> đang cần phun; trên Max -> ngưng phun; giữa -> ổn định.
+  const hTxt = h.toFixed(1);
+  if (h < min) {
+    els.humContext.textContent = `Dưới ngưỡng bật (${hTxt} < ${min}) → máy phun chạy`;
+    els.humContext.className = "text-xs text-sky-300 mt-1.5";
+  } else if (h > max) {
+    els.humContext.textContent = `Trên ngưỡng tắt (${hTxt} > ${max}) → máy phun tắt`;
+    els.humContext.className = "text-xs text-amber-300 mt-1.5";
+  } else {
+    els.humContext.textContent = `Trong vùng ổn định ${min}–${max} %RH`;
+    els.humContext.className = "text-xs text-emerald-300 mt-1.5";
+  }
 }
 
 // Field /status/esp1Online do ESP tự ghi, không tự sửa khi mất mạng (xem CONTRACT.md).
@@ -316,9 +483,7 @@ function maybeCorrectEsp1Online(online) {
 function renderStatus(st) {
   // Online: suy từ lastSeen (xem khối trên) thay vì tin cờ esp1Online.
   g_lastStatus = st;
-  renderOnline();
-  // Bật timer tự lật offline khi ESP ngừng cập nhật (chỉ tạo 1 lần).
-  if (!g_onlineTimer) g_onlineTimer = setInterval(renderOnline, 5000);
+  renderOnline(); // (timer 5s re-check tạo trong attachListeners)
 
   // Máy phun (mist).
   setBadge(els.stMist, st.mist === true,
@@ -347,11 +512,26 @@ function renderStatus(st) {
     els.stTankFill.style.transform = "scaleY(" + pct + ")";
     els.stTankFill.setAttribute("fill", tankInfo.fill);
 
-    // Dải sóng gợn: cùng toạ độ đáy (62) và tỉ lệ với stTankFill — translateY (KHÔNG phải
-    // attribute y, tránh đúng lỗi CSS-transition-đè-attribute đã gặp) để mặt sóng luôn nằm
-    // ngay đỉnh mực nước hiện tại. Cuộn ngang liên tục do class .tank-wave-path (styles.css).
+    // Dải sóng gợn: cùng toạ độ đáy (y=152) và chiều cao lòng bồn (134) với stTankFill —
+    // translateY (KHÔNG phải attribute y, tránh đúng lỗi CSS-transition-đè-attribute đã gặp)
+    // để mặt sóng luôn nằm ngay đỉnh mực nước hiện tại. Cuộn ngang liên tục do styles.css.
     if (els.stTankWave) {
-      els.stTankWave.style.transform = "translateY(" + (62 - 60 * pct) + "px)";
+      els.stTankWave.style.transform = "translateY(" + (152 - 134 * pct) + "px)";
+    }
+
+    // % mức nước giữa bồn (0/1/2/3 -> 0/33/67/100%)
+    if (els.stTankPct) {
+      els.stTankPct.textContent = Math.round(pct * 100) + "%";
+    }
+
+    // Thang chú giải 4 mức: dòng đang active sáng + đậm, các dòng khác mờ đi
+    if (els.tankLegend) {
+      els.tankLegend.querySelectorAll("[data-tank-level]").forEach((row) => {
+        const active = Number(row.dataset.tankLevel) === level;
+        row.classList.toggle("opacity-40", !active);
+        row.classList.toggle("text-slate-200", active);
+        row.classList.toggle("font-semibold", active);
+      });
     }
   }
 
@@ -391,6 +571,14 @@ function renderConfig(cfg) {
   const hset = typeof cfg.hset === "number" ? cfg.hset : 70;
   const deadband = typeof cfg.deadband === "number" ? cfg.deadband : 5;
   const mode = VALID_MODES.includes(cfg.mode) ? cfg.mode : "continuous";
+
+  // Ngưỡng Min/Max suy từ GIÁ TRỊ SERVER (không phải giá trị đang gõ trong form):
+  // đẩy sang biểu đồ (vùng Deadband) + card Độ ẩm (thanh vị trí + dòng ngữ cảnh).
+  // Cập nhật kể cả khi admin đang gõ form — 2 chỗ này hiển thị cấu hình ĐANG chạy.
+  g_cfgMin = hset - deadband;
+  g_cfgMax = hset + deadband;
+  setDeadbandBand(g_cfgMin, g_cfgMax);
+  renderHumContext();
 
   // Nếu admin đang chỉnh BẤT KỲ field nào trong form thì KHÔNG ghi đè (tránh mất giá
   // trị đang gõ ở field còn lại khi /config cập nhật từ server). Chỉ cập nhật phần text.
@@ -454,12 +642,17 @@ document.addEventListener("click", (e) => {
 });
 
 // Hiển thị Max = hset + deadband, Min = hset - deadband (suy ra).
+// KHÔNG toFixed(0): deadband lẻ (vd 1.5) mà làm tròn thì ô hiển thị lệch ±0.5 so với
+// ngưỡng THẬT firmware dùng (vd 41.5 hiện thành "42") — gây hiểu nhầm đã gặp thực tế.
+function fmtRH(v) {
+  return (v % 1 === 0 ? v.toFixed(0) : v.toFixed(1)) + " %RH";
+}
 function updateDerived() {
   const hset = Number(els.cfgHset.value);
   const deadband = Number(els.cfgDeadband.value);
   if (Number.isFinite(hset) && Number.isFinite(deadband)) {
-    els.cfgMax.textContent = (hset + deadband).toFixed(0) + " %RH";
-    els.cfgMin.textContent = (hset - deadband).toFixed(0) + " %RH";
+    els.cfgMax.textContent = fmtRH(hset + deadband);
+    els.cfgMin.textContent = fmtRH(hset - deadband);
   } else {
     els.cfgMax.textContent = "— %RH";
     els.cfgMin.textContent = "— %RH";
@@ -538,7 +731,8 @@ els.cfgForm.addEventListener("submit", async (e) => {
       writeConfig({ mode, hset, deadband }, email),
       writeWebSettings(onlineTimeoutSec, email)
     ]);
-    showCfgMsg("Đã lưu cấu hình thành công.", "ok");
+    els.cfgMsg.hidden = true; // dọn thông báo lỗi cũ (nếu có) — thành công báo bằng toast
+    showToast("✓ Đã lưu cấu hình", "ok");
   } catch (err) {
     if (err && err.code === "permission-denied") {
       showCfgMsg(err.message, "error");
@@ -578,6 +772,28 @@ els.cfgForm.addEventListener("submit", async (e) => {
 //     if (els.btnTogglePump.textContent === "Đang gửi...") els.btnTogglePump.textContent = oldLabel;
 //   }
 // });
+
+// ============================================================================
+//  TOAST NỔI (2026-07-14) — thông báo trượt lên góc phải dưới rồi tự biến mất.
+//  Dùng cho thông báo THÀNH CÔNG (nổi bật, không bị bỏ qua như dòng text dưới
+//  form); lỗi vẫn dùng showCfgMsg inline cạnh form để đọc được lâu.
+// ============================================================================
+function showToast(text, type = "ok") {
+  if (!els.toastWrap) return;
+  const t = document.createElement("div");
+  t.className = "toast-item px-4 py-3 rounded-xl text-sm font-semibold shadow-2xl border " +
+    (type === "ok"
+      ? "bg-emerald-600/95 border-emerald-400/40 text-white"
+      : "bg-red-600/95 border-red-400/40 text-white");
+  t.textContent = text;
+  els.toastWrap.appendChild(t);
+
+  // Sau 3.2s: mờ dần (.toast-out có transition) rồi gỡ khỏi DOM.
+  setTimeout(() => {
+    t.classList.add("toast-out");
+    setTimeout(() => t.remove(), 400);
+  }, 3200);
+}
 
 function showCfgMsg(text, type) {
   els.cfgMsg.textContent = text;
