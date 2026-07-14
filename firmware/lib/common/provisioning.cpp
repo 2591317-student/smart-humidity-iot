@@ -72,6 +72,21 @@ void handleOptions() {
   server.send(204);  // No Content
 }
 
+// GET /info -> JSON định danh thiết bị (CONTRACT mục 5).
+void handleInfo() {
+  JsonDocument doc;
+  doc["id"]          = g_id;
+  doc["role"]        = g_role;
+  doc["mac"]         = g_mac;
+  doc["fw"]          = FW_VERSION;
+  doc["provisioned"] = Provisioning::isProvisioned();
+
+  String out;
+  serializeJson(doc, out);
+  addCorsHeaders();
+  server.send(200, "application/json", out);
+}
+
 // POST /provision -> parse JSON body, lưu Preferences, hẹn reboot sau ~1s.
 void handleProvision() {
   addCorsHeaders();
@@ -149,19 +164,16 @@ void handleProvision() {
   g_rebootAt  = millis() + 1000;
 }
 
-// GET /provision -> danh tính thiết bị + cấu hình ĐÃ GHI qua POST /provision (CONTRACT mục 5).
-// Gộp chung (trước đây tách 2 endpoint /info + /provision, gây nhầm lẫn khi trao đổi với
-// nhóm — nay 1 endpoint duy nhất trả đủ cả 2 loại thông tin). Hữu ích để xác nhận điện thoại
-// tới được ESP + xem lại đã lưu đúng SSID/peerMac mà KHÔNG cần xem Serial. KHÔNG trả mật
-// khẩu WiFi thật (chỉ báo "hasPassword" có/không) để tránh lộ khi ai đó dò IP.
+// GET /provision -> đọc lại thông tin ĐÃ GHI qua POST /provision (CONTRACT mục 5).
+// Tách riêng khỏi GET /info (đã gộp rồi tách lại — board thật ngoài hiện trường chạy
+// firmware khác/cũ hơn repo, chỉ có 1 trong 2 endpoint tuỳ bản, giữ tách riêng để PWA
+// test được độc lập từng phần thay vì phụ thuộc cả 2 phải có mặt cùng lúc). Hữu ích để
+// xác nhận đã lưu đúng SSID/peerMac mà KHÔNG cần xem Serial. KHÔNG trả mật khẩu WiFi
+// thật (chỉ báo "hasPassword" có/không) để tránh lộ khi ai đó dò IP.
 void handleGetProvision() {
   ProvConfig cfg = Provisioning::load();
 
   JsonDocument doc;
-  doc["id"]          = g_id;
-  doc["role"]        = g_role;
-  doc["mac"]         = g_mac;
-  doc["fw"]          = FW_VERSION;
   doc["ssid"]        = cfg.ssid;
   doc["hasPassword"] = cfg.pass.length() > 0;
   doc["peerMac"]     = cfg.peerMac;
@@ -358,8 +370,10 @@ void beginAP(const char* role) {
 
   // --- Đăng ký route HTTP ---
   server.on("/",          HTTP_GET,     handleRoot);
+  server.on("/info",      HTTP_GET,     handleInfo);
+  server.on("/info",      HTTP_OPTIONS, handleOptions);   // preflight
   server.on("/provision", HTTP_POST,    handleProvision);
-  server.on("/provision", HTTP_GET,     handleGetProvision);   // danh tính + cấu hình đã ghi (gộp, xem handleGetProvision)
+  server.on("/provision", HTTP_GET,     handleGetProvision);   // đọc lại thông tin đã ghi
   server.on("/provision", HTTP_OPTIONS, handleOptions);  // preflight
   server.on("/reset",     HTTP_POST,    handleReset);
   server.on("/reset",     HTTP_OPTIONS, handleOptions);   // preflight

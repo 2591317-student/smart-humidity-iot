@@ -56,7 +56,7 @@ function bindEvents() {
   $("#send-wifi").addEventListener("change", applySendToggles);
   $("#send-mac").addEventListener("change", applySendToggles);
 
-  // --- Nút chẩn đoán: gọi GET /provision của ESP ---
+  // --- Nút chẩn đoán: gọi GET /info của ESP ---
   $("#btn-test-info").addEventListener("click", testDeviceInfo);
 
   // --- Nút khởi động lại: gọi POST /reboot của ESP ---
@@ -195,10 +195,12 @@ function updateNetStatus() {
 }
 
 // ---------------------------------------------------------------------------
-// Chẩn đoán: gọi GET /provision (danh tính + cấu hình ĐÃ LƯU — id/role/mac/fw, SSID,
-// peerMac, có mật khẩu chưa) của ESP → xác nhận tới được thiết bị + xem lại đã lưu đúng
-// chưa mà không cần xem Serial (CONTRACT mục 5). Trước đây tách /info + /provision, gộp
-// lại thành 1 endpoint duy nhất cho gọn (đỡ nhầm lẫn khi trao đổi với nhóm).
+// Chẩn đoán: gọi GET /info (danh tính) + GET /provision (cấu hình ĐÃ LƯU — SSID,
+// peerMac, có mật khẩu chưa) của ESP → xác nhận tới được thiết bị + xem lại đã lưu
+// đúng chưa mà không cần xem Serial (CONTRACT mục 5). Cố tình TÁCH RIÊNG 2 lần fetch
+// (không gộp 1 endpoint) vì board thật ngoài hiện trường có thể chỉ chạy firmware hỗ
+// trợ 1 trong 2 (code phân kỳ — xem docs/TIEN-DO-2026-07-02.md) — tách riêng để lỗi ở
+// endpoint này không làm mất luôn kết quả của endpoint kia.
 // ---------------------------------------------------------------------------
 async function fetchJsonSafe(url) {
   const resp = await fetch(url, { method: "GET" });
@@ -216,9 +218,17 @@ async function testDeviceInfo() {
   btn.disabled = true;
   btn.textContent = "Đang kiểm tra…";
   try {
-    const prov = await fetchJsonSafe(base + "/provision");
-    const pretty = "Danh tính + cấu hình đã lưu (GET /provision):\n" +
-      (prov.json ? JSON.stringify(prov.json, null, 2) : prov.text);
+    const info = await fetchJsonSafe(base + "/info");
+    let pretty = "Danh tính (GET /info):\n" + (info.json ? JSON.stringify(info.json, null, 2) : info.text);
+
+    // GET /provision không bắt buộc phải có (firmware cũ/mock có thể chưa hỗ trợ) — lỗi ở
+    // đây KHÔNG làm hỏng kết quả /info đã lấy được ở trên.
+    try {
+      const prov = await fetchJsonSafe(base + "/provision");
+      if (prov.ok && prov.json) {
+        pretty += "\n\nCấu hình đã lưu (GET /provision):\n" + JSON.stringify(prov.json, null, 2);
+      }
+    } catch (_) {}
 
     out.textContent = "✓ Tới được " + base + "\n\n" + pretty;
     out.className =
@@ -266,12 +276,14 @@ async function onClickReboot() {
       bodyJson = JSON.parse(await resp.text());
     } catch (_) {}
 
-    // Khoan dung response lệch chuẩn (board chạy firmware khác/cũ hơn repo trả {"status":"ok"}
-    // thay vì {"ok":true,...} — xem CONTRACT.md, đã gặp thực tế với /provision, giờ áp dụng luôn
-    // cho /reboot để tránh báo lỗi oan khi lệnh thực ra đã thành công).
-    const success = resp.ok && bodyJson && (bodyJson.ok === true || bodyJson.status === "ok");
+    // Tin vào HTTP status (2xx) là tín hiệu thành công chính — board thật ngoài hiện trường
+    // có thể trả JSON lệch chuẩn ({"status":"ok"}) hoặc thậm chí KHÔNG có body JSON hợp lệ
+    // (bodyJson = null) dù request đã thành công thật (xem CONTRACT.md, "code phân kỳ" ở
+    // docs/TIEN-DO-2026-07-02.md). Body chỉ dùng để hiển thị thêm thông tin nếu có, không
+    // còn là điều kiện bắt buộc để coi là thành công.
+    const success = resp.ok;
     if (success) {
-      out.textContent = "✓ " + (bodyJson.message || "Đang khởi động lại…");
+      out.textContent = "✓ " + ((bodyJson && bodyJson.message) || "Đang khởi động lại…");
       out.className = "text-sm text-emerald-600";
     } else {
       const detail = (bodyJson && bodyJson.message) || "HTTP " + resp.status + " " + resp.statusText;
@@ -372,15 +384,15 @@ async function onSubmitProvision(ev) {
       // body không phải JSON — giữ bodyText
     }
 
-    // Chuẩn CONTRACT là {ok:true,...}, nhưng một số firmware/board thực tế (bản cũ hơn,
-    // "code phân kỳ" — xem docs/TIEN-DO-2026-07-02.md) chỉ trả {status:"ok"}. Chấp nhận
-    // cả 2 kiểu để không báo "từ chối" oan khi thiết bị thật ra đã lưu thành công.
-    const isSuccess =
-      resp.ok && bodyJson && (bodyJson.ok === true || bodyJson.status === "ok");
+    // Tin vào HTTP status (2xx) là tín hiệu thành công chính — board thật ngoài hiện trường
+    // có thể trả JSON lệch chuẩn ({"status":"ok"}) hoặc thậm chí KHÔNG có body JSON hợp lệ
+    // (bodyJson = null) dù request đã thành công thật (xem CONTRACT.md, "code phân kỳ" ở
+    // docs/TIEN-DO-2026-07-02.md). Body chỉ dùng để hiển thị thêm thông tin nếu có.
+    const isSuccess = resp.ok;
 
     if (isSuccess) {
-      const msg = bodyJson.message || "Đã lưu cấu hình. Thiết bị sẽ khởi động lại.";
-      const macInfo = bodyJson.mac ? "\nMAC thiết bị: " + bodyJson.mac : "";
+      const msg = (bodyJson && bodyJson.message) || "Đã lưu cấu hình. Thiết bị sẽ khởi động lại.";
+      const macInfo = bodyJson && bodyJson.mac ? "\nMAC thiết bị: " + bodyJson.mac : "";
       showResult(true, "Cấu hình thành công!", msg + macInfo, bodyJson);
     } else {
       // HTTP lỗi hoặc ok=false

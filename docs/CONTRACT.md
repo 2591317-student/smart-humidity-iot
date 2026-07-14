@@ -187,6 +187,12 @@ Khi vào chế độ **SoftAP**:
 
 ### Endpoints
 
+`GET /info` → thông tin thiết bị (JSON):
+```json
+{ "id": "MAIN-A1B2C3", "role": "main", "mac": "A0:B1:C2:A1:B2:C3",
+  "fw": "1.0.0", "provisioned": false }
+```
+
 `POST /provision` (Content-Type: application/json) → nạp cấu hình MẠNG (bản gọn):
 ```json
 {
@@ -215,26 +221,29 @@ Phản hồi:
 ```
 Sau khi lưu Preferences thành công → trả response → `delay(1000)` → `ESP.restart()` vào chế độ chạy bình thường (STA).
 
-> ⚠️ **PWA khoan dung với response lệch chuẩn:** đã gặp thực tế (2026-07-13) một board chạy firmware
-> khác/cũ hơn repo này trả `{"status":"ok", ...}` thay vì `{"ok":true, ...}` — PWA từng báo nhầm
-> "Thiết bị từ chối cấu hình" dù thiết bị đã lưu thành công. `mobile/js/app.js::onSubmitProvision`
-> giờ coi CẢ `bodyJson.ok === true` LẪN `bodyJson.status === "ok"` là thành công, để không phụ thuộc
-> hoàn toàn vào firmware đang chạy trên board thật đã khớp 100% chuẩn này chưa (xem "code phân kỳ"
-> trong `docs/TIEN-DO-2026-07-02.md`). Firmware trong repo vẫn PHẢI trả đúng `{"ok":true,...}` —
-> đây chỉ là lớp phòng thủ phía client, không phải đổi chuẩn.
->
-> (2026-07-14: xác nhận thêm qua test trực tiếp bằng Thunder Client — board thật trả `{"status":"ok"}`
-> cho CẢ `/reboot` chứ không riêng `/provision`. `onClickReboot` giờ cũng khoan dung tương tự, tránh
-> hiện lỗi oan cho nút Khởi động lại khi lệnh thực ra đã thành công.)
+> ⚠️ **PWA tin vào HTTP status (2xx), không bắt buộc body JSON đúng chuẩn:** đã gặp thực tế
+> (2026-07-13 → 07-14) board chạy firmware khác/cũ hơn repo này trả `{"status":"ok", ...}` thay vì
+> `{"ok":true, ...}` cho `/provision` VÀ `/reboot` — có lúc PWA còn vá theo từng định dạng cụ thể
+> (`bodyJson.status === "ok"`), nhưng rồi phát hiện board có lúc trả **200 OK mà body còn không phải
+> JSON hợp lệ** (rỗng/không parse được) khiến cách vá theo field vẫn báo "từ chối"/"lỗi" oan. Từ
+> 2026-07-14, `mobile/js/app.js` (`onSubmitProvision`, `onClickReboot`) đổi hẳn sang **coi `resp.ok`
+> (HTTP 2xx) là tín hiệu thành công duy nhất bắt buộc** — body JSON (`message`, `mac`...) chỉ dùng để
+> hiển thị thêm thông tin nếu đọc được, không còn là điều kiện. Lý do tin được HTTP status: firmware
+> trong repo dùng đúng quy ước mã lỗi chuẩn (400 khi thật sự sai — thiếu field, JSON hỏng...), nên
+> 2xx luôn đồng nghĩa "đã xử lý được", bất kể board đang chạy bản nào (xem "code phân kỳ" trong
+> `docs/TIEN-DO-2026-07-02.md`). Firmware trong repo vẫn PHẢI trả đúng `{"ok":true,...}` — đây chỉ là
+> lớp phòng thủ phía client, không phải đổi chuẩn.
 
-`GET /provision` → danh tính thiết bị + đọc lại cấu hình **ĐÃ GHI** qua `POST /provision` (không cần
-xem Serial). Gộp chung 1 endpoint (trước đây tách riêng `/info`, gây nhầm lẫn khi trao đổi — nay bỏ
-`/info`, dùng `/provision` cho cả 2 việc):
+`GET /provision` → đọc lại thông tin **ĐÃ GHI** qua `POST /provision` (không cần xem Serial):
 ```json
-{ "id": "MAIN-A1B2C3", "role": "main", "mac": "A0:B1:C2:A1:B2:C3", "fw": "1.0.0",
-  "ssid": "TenWiFiNha", "hasPassword": true, "peerMac": "11:22:33:44:55:66", "provisioned": true }
+{ "ssid": "TenWiFiNha", "hasPassword": true, "peerMac": "11:22:33:44:55:66", "provisioned": true }
 ```
 Không trả mật khẩu WiFi thật (chỉ báo `hasPassword` có/không) để tránh lộ khi ai đó dò ra IP AP.
+
+> ⚠️ **Cố tình giữ TÁCH RIÊNG `/info` và `/provision`** (2026-07-14): có lúc đã gộp 2 endpoint làm 1
+> cho gọn, nhưng board thật ngoài hiện trường chạy firmware khác/cũ hơn repo (xem "code phân kỳ" ở
+> `docs/TIEN-DO-2026-07-02.md`) nên không chắc board nào cũng hỗ trợ bản gộp cùng lúc. Tách riêng để
+> PWA gọi từng endpoint độc lập — lỗi ở endpoint này không làm mất kết quả của endpoint kia.
 
 `POST /reset` → xoá Preferences, quay về chưa cấu hình (tuỳ chọn, để demo lại).
 

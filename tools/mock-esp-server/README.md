@@ -24,7 +24,8 @@ mục 6) để dán vào PWA khi test.
 
 | Method | Path | Mô tả |
 |---|---|---|
-| `GET`  | `/provision` | Danh tính + cấu hình đã lưu: `{ id, role, mac, fw, ssid, hasPassword, peerMac, provisioned }` |
+| `GET`  | `/info`      | Danh tính thiết bị: `{ id, role, mac, fw, provisioned }` |
+| `GET`  | `/provision` | Cấu hình đã lưu: `{ ssid, hasPassword, peerMac, provisioned }` |
 | `POST` | `/provision` | Nhận cấu hình WiFi + tài khoản thiết bị (JSON), **log ra console**, trả `{ ok, message, mac }` |
 | `POST` | `/reset`     | Xoá cấu hình mô phỏng, quay về `provisioned: false` |
 | `GET`  | `/`          | Trang HTML form provisioning same-origin (fallback luôn hoạt động) |

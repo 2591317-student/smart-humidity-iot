@@ -175,7 +175,7 @@
               id="btn-test-info"
               class="w-full bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 text-sm font-medium rounded-xl py-2 transition"
             >
-              Kiểm tra kết nối tới ESP (GET /provision)
+              Kiểm tra kết nối tới ESP (GET /info)
             </button>
             <pre
               id="info-result"
@@ -183,8 +183,8 @@
             ></pre>
             <p class="text-[11px] text-slate-400 leading-snug">
               Lưu ý: trình duyệt không đọc được tên WiFi / IP của điện thoại (giới hạn bảo mật web).
-              Nút này gọi <span class="font-mono">GET /provision</span> để xác nhận điện thoại có tới được ESP không,
-              ESP báo về danh tính (role, MAC, đã cấu hình chưa) và cấu hình đã lưu (SSID, peerMac).
+              Nút này gọi <span class="font-mono">/info</span> để xác nhận điện thoại có tới được ESP không
+              và ESP báo về danh tính (role, MAC, đã cấu hình chưa).
             </p>
           </div>
 
