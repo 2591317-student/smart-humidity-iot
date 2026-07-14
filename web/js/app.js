@@ -52,9 +52,11 @@ const els = {
   // Status panel
   stMist: $("stMist"),
   stTank: $("stTank"),
+  stTankFill: $("stTankFill"), // tank gauge SVG (bình chứa) — xem renderStatus
   // Bơm châm nước — TẠM ẨN (2026-07-14, xem web/index.html + docs/TIEN-DO-2026-07-02.md).
   // stPump: $("stPump"),
-  stGateway: $("stGateway"),
+  // Gateway — TẠM ẨN (2026-07-14, xem web/index.html + docs/TIEN-DO-2026-07-02.md).
+  // stGateway: $("stGateway"),
   // Điều khiển bơm thủ công — TẠM ẨN cùng lý do trên.
   // pumpControlWrap: $("pumpControlWrap"),
   // btnTogglePump: $("btnTogglePump"),
@@ -324,24 +326,36 @@ function renderStatus(st) {
   // Mức nước (tank): SỐ 0-3, ứng với số đầu dò (trong 3 đầu dò M2/M3/M4) đang ngập nước
   // (CONTRACT mục 2). 0 = rất thấp/cạn, 1 = thấp, 2 = bình thường, 3 = đầy.
   const TANK_LEVELS = {
-    0: { text: "Rất thấp — cần châm nước", cls: "bg-red-500/25 text-red-300" },
-    1: { text: "Thấp", cls: "bg-amber-500/20 text-amber-300" },
-    2: { text: "Bình thường", cls: "bg-sky-500/20 text-sky-300" },
-    3: { text: "Đầy nước", cls: "bg-green-500/20 text-green-300" },
+    0: { text: "Rất thấp — cần châm nước", cls: "bg-red-500/25 text-red-300", fill: "#ef4444" },
+    1: { text: "Thấp", cls: "bg-amber-500/20 text-amber-300", fill: "#f59e0b" },
+    2: { text: "Bình thường", cls: "bg-sky-500/20 text-sky-300", fill: "#38bdf8" },
+    3: { text: "Đầy nước", cls: "bg-green-500/20 text-green-300", fill: "#22c55e" },
   };
-  const tankInfo = TANK_LEVELS[st.tank] || { text: "—", cls: "bg-gray-600/30 text-gray-300" };
+  const tankInfo = TANK_LEVELS[st.tank] || { text: "—", cls: "bg-gray-600/30 text-gray-300", fill: "#475569" };
   els.stTank.textContent = tankInfo.text;
   els.stTank.className = "px-3 py-1 rounded-full text-sm font-semibold " + tankInfo.cls;
+
+  // Gauge SCADA: mực nước dâng trong bình theo % (0/1/2/3 -> 0/33/67/100%).
+  // Dùng CSS transform: scaleY() (neo đáy qua transform-origin trong index.html) thay vì
+  // set attribute height/y trực tiếp — SVG height/y là presentation attribute, bị class
+  // CSS transition-* đè lên không ổn định (đã verify bằng browser: computed style "kẹt"
+  // ở giá trị cũ). transform là thuộc tính CSS chuẩn, animate mượt và đúng.
+  if (els.stTankFill) {
+    const level = typeof st.tank === "number" && TANK_LEVELS[st.tank] ? st.tank : 0;
+    const pct = level / 3;
+    els.stTankFill.style.transform = "scaleY(" + pct + ")";
+    els.stTankFill.setAttribute("fill", tankInfo.fill);
+  }
 
   // Bơm châm (pump) — TẠM ẨN (2026-07-14, xem web/index.html).
   // setBadge(els.stPump, st.pump === true,
   //   { on: "Đang bơm", off: "Tắt", onClass: "bg-amber-500/20 text-amber-300", offClass: "bg-gray-600/30 text-gray-300" });
 
-  // Gateway: esp1 (bình thường) / esp2 (gateway dự phòng).
-  const gw = st.gateway || "—";
-  els.stGateway.textContent = gw === "esp2" ? "ESP2 (dự phòng)" : (gw === "esp1" ? "ESP1 (chính)" : "—");
-  els.stGateway.className = "px-3 py-1 rounded-full text-sm font-semibold " +
-    (gw === "esp2" ? "bg-purple-500/20 text-purple-300" : "bg-indigo-500/20 text-indigo-300");
+  // Gateway — TẠM ẨN (2026-07-14, xem web/index.html).
+  // const gw = st.gateway || "—";
+  // els.stGateway.textContent = gw === "esp2" ? "ESP2 (dự phòng)" : (gw === "esp1" ? "ESP1 (chính)" : "—");
+  // els.stGateway.className = "px-3 py-1 rounded-full text-sm font-semibold " +
+  //   (gw === "esp2" ? "bg-purple-500/20 text-purple-300" : "bg-indigo-500/20 text-indigo-300");
 }
 
 function setBadge(el, on, opt) {
