@@ -53,6 +53,7 @@ const els = {
   stMist: $("stMist"),
   stTank: $("stTank"),
   stTankFill: $("stTankFill"), // tank gauge SVG (bình chứa) — xem renderStatus
+  stTankWave: $("stTankWave"), // dải sóng gợn trên mặt nước — xem renderStatus
   // Bơm châm nước — TẠM ẨN (2026-07-14, xem web/index.html + docs/TIEN-DO-2026-07-02.md).
   // stPump: $("stPump"),
   // Gateway — TẠM ẨN (2026-07-14, xem web/index.html + docs/TIEN-DO-2026-07-02.md).
@@ -345,6 +346,13 @@ function renderStatus(st) {
     const pct = level / 3;
     els.stTankFill.style.transform = "scaleY(" + pct + ")";
     els.stTankFill.setAttribute("fill", tankInfo.fill);
+
+    // Dải sóng gợn: cùng toạ độ đáy (62) và tỉ lệ với stTankFill — translateY (KHÔNG phải
+    // attribute y, tránh đúng lỗi CSS-transition-đè-attribute đã gặp) để mặt sóng luôn nằm
+    // ngay đỉnh mực nước hiện tại. Cuộn ngang liên tục do class .tank-wave-path (styles.css).
+    if (els.stTankWave) {
+      els.stTankWave.style.transform = "translateY(" + (62 - 60 * pct) + "px)";
+    }
   }
 
   // Bơm châm (pump) — TẠM ẨN (2026-07-14, xem web/index.html).

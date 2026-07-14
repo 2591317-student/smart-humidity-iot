@@ -67,8 +67,10 @@
         <span class="alarm-icon ml-2">⚠</span>
       </div>
 
-      <!-- Header -->
-      <header class="glass border-b border-white/10">
+      <!-- Header: nền ĐỤC (không dùng .glass chung — chỉ 4% độ đục, để lộ chữ nội dung cuộn
+           phía sau khi header dính ở top). bg-slate-950/95 + blur giữ vẫn cảm giác "kính mờ"
+           nhưng che kín hoàn toàn. -->
+      <header class="bg-slate-950/95 backdrop-blur-md border-b border-white/10">
         <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
           <div class="flex items-center gap-3 min-w-0">
             <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-sky-500 to-emerald-500 flex items-center justify-center text-xl shrink-0">💧</div>
@@ -132,46 +134,63 @@
       <!-- Panel trạng thái thiết bị -->
       <section class="glass rounded-2xl p-6">
         <h2 class="text-white font-bold mb-4 flex items-center gap-2">⚙️ Trạng thái hệ thống</h2>
-        <div class="grid grid-cols-2 gap-4">
+        <div class="grid grid-cols-1 gap-4">
           <div class="bg-white/5 rounded-xl p-4 flex flex-col gap-2">
             <span class="text-slate-400 text-sm">Máy phun sương</span>
             <span id="stMist" class="px-3 py-1 rounded-full text-sm font-semibold bg-gray-600/30 text-gray-300 w-max">—</span>
           </div>
-          <div class="bg-white/5 rounded-xl p-4 flex items-center gap-4">
-            <!-- Tank gauge kiểu SCADA: bình chứa SVG, mực nước dâng theo % (0/1/2/3 -> 0/33/67/100%). -->
-            <svg viewBox="0 0 40 64" class="w-9 h-16 shrink-0">
-              <clipPath id="tankClip"><rect x="2" y="2" width="36" height="60" rx="8" /></clipPath>
-              <rect x="2" y="2" width="36" height="60" rx="8" fill="#0f172a" />
-              <rect id="stTankFill" x="2" y="2" width="36" height="60" clip-path="url(#tankClip)"
-                    fill="#475569" class="transition-transform duration-700 ease-out"
-                    style="transform-origin: 20px 62px; transform: scaleY(0);" />
-              <line x1="2" y1="17" x2="38" y2="17" stroke="#334155" stroke-width="1" stroke-dasharray="2,2" />
-              <line x1="2" y1="32" x2="38" y2="32" stroke="#334155" stroke-width="1" stroke-dasharray="2,2" />
-              <line x1="2" y1="47" x2="38" y2="47" stroke="#334155" stroke-width="1" stroke-dasharray="2,2" />
-              <rect x="2" y="2" width="36" height="60" rx="8" fill="none" stroke="#475569" stroke-width="2" />
-            </svg>
-            <div class="flex flex-col gap-2 min-w-0">
-              <span class="text-slate-400 text-sm">Mức nước</span>
-              <span id="stTank" class="px-3 py-1 rounded-full text-sm font-semibold bg-gray-600/30 text-gray-300 w-max">—</span>
-            </div>
-          </div>
           <!-- Bơm châm nước — TẠM ẨN (2026-07-14): chưa có phần cứng bơm thật, badge trạng thái
                + nút điều khiển thủ công gây hiểu nhầm (bấm nút không làm badge đổi vì ESP1 chưa
-               đọc /config/pumpManualOn). Bật lại bằng cách gỡ comment khối này + khối bên dưới,
-               và đổi lại grid-cols cho đủ 4/5 badge. Xem docs/TIEN-DO-2026-07-02.md.
+               đọc /config/pumpManualOn). Bật lại bằng cách gỡ comment khối này + khối bên dưới.
+               Xem docs/TIEN-DO-2026-07-02.md.
           <div class="bg-white/5 rounded-xl p-4 flex flex-col gap-2">
             <span class="text-slate-400 text-sm">Bơm châm nước</span>
             <span id="stPump" class="px-3 py-1 rounded-full text-sm font-semibold bg-gray-600/30 text-gray-300 w-max">—</span>
           </div>
           -->
           <!-- Gateway — TẠM ẨN (2026-07-14, theo yêu cầu): badge tính năng "gateway dự phòng"
-               (ESP2 tự chuyển vai khi ESP1 lỗi). Bật lại bằng cách gỡ comment khối này + đổi lại
-               grid-cols cho đủ số badge. Xem docs/TIEN-DO-2026-07-02.md.
+               (ESP2 tự chuyển vai khi ESP1 lỗi). Bật lại bằng cách gỡ comment khối này.
+               Xem docs/TIEN-DO-2026-07-02.md.
           <div class="bg-white/5 rounded-xl p-4 flex flex-col gap-2">
             <span class="text-slate-400 text-sm">Gateway</span>
             <span id="stGateway" class="px-3 py-1 rounded-full text-sm font-semibold bg-gray-600/30 text-gray-300 w-max">—</span>
           </div>
           -->
+        </div>
+
+        <!-- Mức nước — khối riêng to hơn, gauge SCADA có hiệu ứng sóng gợn (2026-07-14). -->
+        <div class="mt-4 bg-white/5 rounded-xl p-5 flex items-center gap-6 flex-wrap sm:flex-nowrap">
+          <svg viewBox="0 0 40 64" class="w-20 h-36 shrink-0 drop-shadow-lg">
+            <defs>
+              <clipPath id="tankClip"><rect x="2" y="2" width="36" height="60" rx="8" /></clipPath>
+            </defs>
+            <rect x="2" y="2" width="36" height="60" rx="8" fill="#0f172a" />
+            <g clip-path="url(#tankClip)">
+              <rect id="stTankFill" x="2" y="2" width="36" height="60"
+                    fill="#475569" class="transition-transform duration-700 ease-out"
+                    style="transform-origin: 20px 62px; transform: scaleY(0);" />
+              <!-- Mặt nước: nhóm ngoài (#stTankWave) di chuyển lên/xuống theo MỨC NƯỚC thật
+                   (translateY, JS set trong app.js#renderStatus, đổi khi tank đổi mức). Nhóm
+                   trong (.tank-wave-bob) tự BẬP BỀNH liên tục (CSS keyframes) — mô phỏng nước
+                   luôn "sống", không đứng yên như hình tĩnh. 2 lớp sóng cuộn ngang tốc độ khác
+                   nhau (parallax) để trông giống nước thật hơn 1 lớp phẳng. -->
+              <g id="stTankWave" style="transform: translateY(62px); transition: transform .7s ease-out;">
+                <g class="tank-wave-bob">
+                  <path class="tank-wave-back"
+                        d="M -20,0 Q -10,-3 0,0 T 20,0 T 40,0 T 60,0 T 80,0 V 8 H -20 Z"
+                        fill="rgba(255,255,255,.16)" />
+                  <path class="tank-wave-front"
+                        d="M -20,1 Q -12,-1.6 -4,1 T 12,1 T 28,1 T 44,1 T 60,1 T 76,1 V 8 H -20 Z"
+                        fill="rgba(255,255,255,.32)" />
+                </g>
+              </g>
+            </g>
+            <rect x="2" y="2" width="36" height="60" rx="8" fill="none" stroke="#475569" stroke-width="2" />
+          </svg>
+          <div class="flex flex-col gap-2 min-w-0">
+            <span class="text-slate-400 text-sm">Mức nước</span>
+            <span id="stTank" class="px-3 py-1 rounded-full text-base font-semibold bg-gray-600/30 text-gray-300 w-max">—</span>
+          </div>
         </div>
 
         <!-- Điều khiển bơm thủ công — TẠM ẨN (2026-07-14, cùng lý do ở trên). Nguyên bản: ẨN mặc

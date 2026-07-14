@@ -164,7 +164,13 @@
             <p id="scan-status" class="hidden text-sm mt-2 text-slate-500"></p>
           </div>
 
-          <!-- ===== Chẩn đoán kết nối (diag) ===== -->
+          <!-- ===== Chẩn đoán kết nối (diag) — TẠM ẨN (2026-07-14) =====
+               Nút gọi GET /info + GET /provision qua fetch() — bị mixed-content chặn trên board
+               thật hiện tại (Chrome không hiện popup Local Network Access, không có trang "/"
+               same-origin fallback trên firmware đang chạy). Ẩn hẳn để tránh gây hiểu nhầm "app
+               lỗi" khi thực ra là giới hạn trình duyệt không né được. Bật lại khi có board đã
+               nạp firmware mới, hoặc khi test qua đường không dính mixed-content (xem
+               docs/TIEN-DO-2026-07-02.md, docs/CONTRACT.md mục 5).
           <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2">
             <div class="flex items-center justify-between gap-2">
               <span class="text-sm font-medium">Chẩn đoán kết nối</span>
@@ -187,6 +193,7 @@
               và ESP báo về danh tính (role, MAC, đã cấu hình chưa).
             </p>
           </div>
+          -->
 
           <!-- ===== Khởi động lại thiết bị (POST /reboot) ===== -->
           <div class="bg-red-50 border border-red-200 rounded-xl p-3 space-y-2">

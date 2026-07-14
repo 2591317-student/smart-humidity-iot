@@ -56,8 +56,8 @@ function bindEvents() {
   $("#send-wifi").addEventListener("change", applySendToggles);
   $("#send-mac").addEventListener("change", applySendToggles);
 
-  // --- Nút chẩn đoán: gọi GET /info của ESP ---
-  $("#btn-test-info").addEventListener("click", testDeviceInfo);
+  // --- Nút chẩn đoán: gọi GET /info của ESP --- TẠM ẨN (2026-07-14, xem index.html)
+  // $("#btn-test-info").addEventListener("click", testDeviceInfo);
 
   // --- Nút khởi động lại: gọi POST /reboot của ESP ---
   $("#btn-reboot").addEventListener("click", onClickReboot);
@@ -201,6 +201,10 @@ function updateNetStatus() {
 // (không gộp 1 endpoint) vì board thật ngoài hiện trường có thể chỉ chạy firmware hỗ
 // trợ 1 trong 2 (code phân kỳ — xem docs/TIEN-DO-2026-07-02.md) — tách riêng để lỗi ở
 // endpoint này không làm mất luôn kết quả của endpoint kia.
+//
+// ⚠️ 2026-07-14: KHÔNG CÒN ĐƯỢC GỌI — nút "Kiểm tra kết nối" đã tạm ẩn (xem index.html)
+// vì bị mixed-content chặn trên board thật hiện tại. Giữ nguyên hàm ở đây (không xoá) để
+// bật lại nhanh khi có board mới/đường test khác — chỉ cần gỡ comment ở bindEvents().
 // ---------------------------------------------------------------------------
 async function fetchJsonSafe(url) {
   const resp = await fetch(url, { method: "GET" });

@@ -143,6 +143,40 @@ select option {
   color: #e2e8f0;
 }
 
+/* ----------------------------------------------------------------------------
+ *  Gauge "Mức nước" kiểu SCADA — mặt nước "sống", không đứng yên như ảnh tĩnh
+ *  (xem web/index.html #stTankWave, app.js#renderStatus). 3 lớp transform lồng
+ *  nhau, mỗi lớp trên 1 phần tử riêng nên KHÔNG đụng nhau:
+ *   1. #stTankWave (JS set translateY qua style) — vị trí mặt nước theo MỨC
+ *      NƯỚC THẬT, đổi khi tank đổi mức.
+ *   2. .tank-wave-bob (CSS keyframes) — bập bềnh lên/xuống liên tục, mô phỏng
+ *      nước luôn chuyển động dù mức nước không đổi.
+ *   3. .tank-wave-back/.tank-wave-front (CSS keyframes) — 2 lớp sóng cuộn
+ *      ngang tốc độ khác nhau (parallax), trông giống nước thật hơn 1 lớp phẳng.
+ * -------------------------------------------------------------------------- */
+@keyframes tankWaveBob {
+  0%, 100% { transform: translateY(-1.2px); }
+  50%      { transform: translateY(1.2px); }
+}
+.tank-wave-bob {
+  animation: tankWaveBob 2.6s ease-in-out infinite;
+}
+
+@keyframes tankWaveScrollBack {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-20px); }
+}
+@keyframes tankWaveScrollFront {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-16px); }
+}
+.tank-wave-back {
+  animation: tankWaveScrollBack 3.2s linear infinite;
+}
+.tank-wave-front {
+  animation: tankWaveScrollFront 2s linear infinite reverse;
+}
+
 /* --- Spinner nhỏ khi đang xử lý --- */
 @keyframes spin { to { transform: rotate(360deg); } }
 .spinner {
