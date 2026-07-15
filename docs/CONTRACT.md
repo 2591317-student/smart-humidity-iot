@@ -285,6 +285,13 @@ trong `docs/TIEN-DO-2026-07-02.md`).
 > trang form do ESP tự phục vụ (`GET /`, same-origin — **không dính cả 2 lỗi trên**, khuyến nghị làm
 > phương án demo dự phòng chắc ăn). Khi test không có phần cứng → PWA trỏ tới `tools/mock-esp-server`
 > (HTTP localhost) → chạy tốt (localhost không bị 2 cơ chế trên chặn).
+>
+> **ĐÃ XÁC NHẬN qua test thật (2026-07-14):** bản PWA deploy HTTPS (`...-provision.web.app`) không gọi
+> được `/info`, `/provision`, `/reboot` của ESP thật — `Failed to fetch` mọi lần, dù gọi trực tiếp
+> `http://192.168.4.1/...` (Thunder Client, hoặc trang `GET /` của ESP) vẫn trả JSON đúng bình thường.
+> Xác nhận đây là trình duyệt chặn (client), không phải lỗi ESP/API. **Kết luận: bản PWA HTTPS giờ chỉ
+> dùng để quét QR lấy MAC** — gửi cấu hình thật bắt buộc qua `http://192.168.4.1/` (xem
+> `mobile/README.md`).
 
 `GET /` → trả 1 trang HTML form provisioning tối giản (same-origin fallback, luôn hoạt động).
 

@@ -293,13 +293,14 @@ async function onClickReboot() {
       const detail = (bodyJson && bodyJson.message) || "HTTP " + resp.status + " " + resp.statusText;
       out.textContent = "✕ " + detail;
       out.className = "text-sm text-red-600";
-      btn.disabled = false;
     }
   } catch (err) {
     out.textContent = "✕ Không gửi được lệnh: " + (err && err.message ? err.message : err);
     out.className = "text-sm text-red-600";
-    btn.disabled = false;
   } finally {
+    // Luôn mở lại nút dù thành công hay lỗi — trước đây chỉ mở lại khi lỗi, nên
+    // sau 1 lần bấm thành công nút bị khoá vĩnh viễn, phải reload trang mới bấm lại được.
+    btn.disabled = false;
     show(out);
     if (btn.textContent === "Đang gửi lệnh…") btn.textContent = oldLabel;
   }

@@ -8,6 +8,14 @@ Hoạt động theo `docs/CONTRACT.md` mục 5 (REST provisioning) và mục 6 (
 > Tài khoản Firebase của thiết bị được **hardcode trong firmware**, còn `hset`/`deadband` chỉnh sau
 > qua web dashboard — nên app KHÔNG hỏi mấy thứ này (cho gọn).
 
+> ⚠️ **ĐÃ XÁC NHẬN qua test thật (2026-07-14): bản PWA deploy HTTPS
+> (`https://smart-humidity-iot-provision.web.app`) KHÔNG THỂ gửi cấu hình/gọi API tới ESP được** —
+> trình duyệt chặn cứng (mixed-content), không có cách nào sửa từ code để vượt qua (xem mục "Mixed-
+> content & Local Network Access" bên dưới). Đây không phải bug tạm thời, là giới hạn bảo mật của
+> trình duyệt. **Vai trò thực tế của bản HTTPS giờ chỉ còn: quét QR lấy MAC cho tiện** (không cần gọi
+> mạng, chỉ đọc camera) — việc **gửi cấu hình thật bắt buộc phải qua trang do chính ESP phục vụ**
+> (`http://192.168.4.1/`, xem mục "Cách DỄ NHẤT" ngay dưới đây).
+
 ## Có gì trong thư mục
 
 ```
@@ -84,10 +92,12 @@ python -m http.server 5500        # → http://localhost:5500
   trình duyệt **không cấp quyền camera** vì không phải HTTPS → cứ **gõ MAC bằng tay** vào ô MAC
   (nút Quét QR sẽ không mở được camera trong trường hợp này).
 
-### B. Deploy HTTPS (vd Firebase Hosting) — chỉ để demo giao diện
+### B. Deploy HTTPS (vd Firebase Hosting) — CHỈ để quét QR / demo giao diện
 
-App vẫn cài được và quét QR (camera chạy trên HTTPS), **nhưng** sẽ KHÔNG POST được tới ESP qua
-`http://` do mixed-content (xem dưới). Phù hợp để demo UI hoặc dùng kèm trang form same-origin của ESP.
+App vẫn cài được và quét QR (camera chạy trên HTTPS), **nhưng ĐÃ XÁC NHẬN qua test thật KHÔNG POST/GET
+được tới ESP qua `http://`** do mixed-content (xem dưới) — không phải "có thể", mà chắc chắn không
+gọi được. Chỉ dùng bản này để quét QR lấy MAC hoặc demo giao diện; gửi cấu hình thật phải chuyển sang
+trang form same-origin của ESP (`http://192.168.4.1/`).
 
 > `firebase.json` đã `ignore` thư mục `mobile/` khỏi Hosting (deploy là web dashboard). Nếu muốn host
 > riêng PWA, tạo site Hosting khác hoặc serve tĩnh ở nơi khác.

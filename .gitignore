@@ -18,8 +18,12 @@ database-debug.log*
 tools/data-injector/config.js
 tools/presence-watcher/config.js
 
+# Slide thuyết trình + ảnh chụp màn hình (không commit, chỉ dùng cá nhân)
+pptx-assets/
+
 # OS / editor
 .DS_Store
 Thumbs.db
 .vscode/
 .idea/
+.claude/
