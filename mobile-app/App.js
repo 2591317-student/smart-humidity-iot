@@ -27,8 +27,36 @@ import {
 } from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { StatusBar } from "expo-status-bar";
+import * as Clipboard from "expo-clipboard"; // copy JSON chi tiết (RN core đã bỏ Clipboard)
 
 const DEFAULT_IP = "192.168.4.1"; // IP SoftAP mặc định của ESP (CONTRACT mục 5)
+
+// ----------------------------------------------------------------------------
+// Hộp JSON/chi tiết kỹ thuật + nút "Sao chép" góc phải trên — copy nguyên văn
+// vào clipboard (tiện gửi Zalo/dán vào báo cáo), đổi nhãn "✓ Đã chép" ~1.6s.
+// ----------------------------------------------------------------------------
+function RawJsonBox({ text }) {
+  const [copied, setCopied] = useState(false);
+  async function onCopy() {
+    try {
+      await Clipboard.setStringAsync(String(text));
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1600);
+    } catch (_) {
+      // clipboard lỗi (hiếm) — im lặng, người dùng bấm lại được
+    }
+  }
+  return (
+    <View style={styles.rawBox}>
+      <Pressable onPress={onCopy} style={[styles.copyBtn, copied && styles.copyBtnDone]} hitSlop={8}>
+        <Text style={[styles.copyBtnText, copied && styles.copyBtnTextDone]}>
+          {copied ? "✓ Đã chép" : "⧉ Sao chép"}
+        </Text>
+      </Pressable>
+      <Text style={styles.rawText}>{text}</Text>
+    </View>
+  );
+}
 
 // ----------------------------------------------------------------------------
 // Banner thông báo thân thiện — icon tròn + tóm tắt dễ đọc, chi tiết kỹ thuật
@@ -51,11 +79,7 @@ function StatusBanner({ ok, summary, raw }) {
           <Text style={styles.bannerToggle}>{showRaw ? "▲ Ẩn chi tiết kỹ thuật" : "▼ Xem chi tiết kỹ thuật"}</Text>
         </Pressable>
       ) : null}
-      {raw && showRaw ? (
-        <View style={styles.rawBox}>
-          <Text style={styles.rawText}>{raw}</Text>
-        </View>
-      ) : null}
+      {raw && showRaw ? <RawJsonBox text={raw} /> : null}
     </View>
   );
 }
@@ -300,11 +324,7 @@ export default function App() {
               {result.title}
             </Text>
             <Text style={styles.resultMessage}>{result.message}</Text>
-            {result.raw ? (
-              <View style={styles.rawBox}>
-                <Text style={styles.rawText}>{JSON.stringify(result.raw, null, 2)}</Text>
-              </View>
-            ) : null}
+            {result.raw ? <RawJsonBox text={JSON.stringify(result.raw, null, 2)} /> : null}
             <Pressable style={[styles.btnPrimary, { width: "100%" }]} onPress={resetForm}>
               <Text style={styles.btnPrimaryText}>{result.ok ? "OK" : "Thử lại"}</Text>
             </Pressable>
@@ -630,4 +650,18 @@ const styles = StyleSheet.create({
     borderColor: "#232f47",
   },
   rawText: { color: "#94a3b8", fontSize: 11, fontFamily: "monospace", lineHeight: 16 },
+  // Nút "Sao chép" trong hộp JSON (RawJsonBox)
+  copyBtn: {
+    alignSelf: "flex-end",
+    borderWidth: 1,
+    borderColor: "#2a3652",
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    marginBottom: 8,
+    backgroundColor: "#161f32",
+  },
+  copyBtnDone: { borderColor: "#155e45", backgroundColor: "#0d2b22" },
+  copyBtnText: { color: "#94a3b8", fontSize: 12, fontWeight: "600" },
+  copyBtnTextDone: { color: "#34d399" },
 });
