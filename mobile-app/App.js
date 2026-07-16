@@ -32,28 +32,70 @@ import * as Clipboard from "expo-clipboard"; // copy JSON chi tiết (RN core đ
 const DEFAULT_IP = "192.168.4.1"; // IP SoftAP mặc định của ESP (CONTRACT mục 5)
 
 // ----------------------------------------------------------------------------
-// Hộp JSON/chi tiết kỹ thuật + nút "Sao chép" góc phải trên — copy nguyên văn
-// vào clipboard (tiện gửi Zalo/dán vào báo cáo), đổi nhãn "✓ Đã chép" ~1.6s.
+// Hộp JSON/chi tiết kỹ thuật:
+//  - Text luôn `selectable` -> long-press cho popup chọn/copy native của hệ
+//    điều hành (Android/iOS), không chỉ copy nguyên khối qua nút bấm.
+//  - Nếu parse được JSON object, tách từng field ra 1 dòng riêng kèm nút
+//    copy riêng cho field đó; nếu không (vd. text lỗi) thì hiện nguyên khối.
+//  - Nút "Sao chép tất cả" luôn có để copy nguyên văn cả khối trong 1 chạm.
 // ----------------------------------------------------------------------------
 function RawJsonBox({ text }) {
-  const [copied, setCopied] = useState(false);
-  async function onCopy() {
+  const [copiedAll, setCopiedAll] = useState(false);
+  const [copiedKey, setCopiedKey] = useState(null);
+
+  async function copy(value, key) {
     try {
-      await Clipboard.setStringAsync(String(text));
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1600);
+      await Clipboard.setStringAsync(String(value));
+      if (key === undefined) {
+        setCopiedAll(true);
+        setTimeout(() => setCopiedAll(false), 1600);
+      } else {
+        setCopiedKey(key);
+        setTimeout(() => setCopiedKey((k) => (k === key ? null : k)), 1600);
+      }
     } catch (_) {
       // clipboard lỗi (hiếm) — im lặng, người dùng bấm lại được
     }
   }
+
+  let fields = null;
+  try {
+    const obj = JSON.parse(text);
+    if (obj && typeof obj === "object" && !Array.isArray(obj)) {
+      fields = Object.entries(obj);
+    }
+  } catch (_) {
+    // không phải JSON object hợp lệ -> giữ fields = null, hiện nguyên khối bên dưới
+  }
+
   return (
     <View style={styles.rawBox}>
-      <Pressable onPress={onCopy} style={[styles.copyBtn, copied && styles.copyBtnDone]} hitSlop={8}>
-        <Text style={[styles.copyBtnText, copied && styles.copyBtnTextDone]}>
-          {copied ? "✓ Đã chép" : "⧉ Sao chép"}
+      <Pressable onPress={() => copy(text)} style={[styles.copyBtn, copiedAll && styles.copyBtnDone]} hitSlop={8}>
+        <Text style={[styles.copyBtnText, copiedAll && styles.copyBtnTextDone]}>
+          {copiedAll ? "✓ Đã chép" : "⧉ Sao chép tất cả"}
         </Text>
       </Pressable>
-      <Text style={styles.rawText}>{text}</Text>
+      {fields ? (
+        fields.map(([key, value]) => {
+          const valueText = typeof value === "string" ? value : JSON.stringify(value);
+          const isCopied = copiedKey === key;
+          return (
+            <View key={key} style={styles.rawFieldRow}>
+              <Text style={styles.rawFieldText} selectable>
+                <Text style={styles.rawFieldKey}>{key}: </Text>
+                {valueText}
+              </Text>
+              <Pressable onPress={() => copy(valueText, key)} style={styles.rawFieldCopyBtn} hitSlop={8}>
+                <Text style={[styles.rawFieldCopyText, isCopied && styles.textOk]}>{isCopied ? "✓" : "⧉"}</Text>
+              </Pressable>
+            </View>
+          );
+        })
+      ) : (
+        <Text style={styles.rawText} selectable>
+          {text}
+        </Text>
+      )}
     </View>
   );
 }
@@ -650,6 +692,19 @@ const styles = StyleSheet.create({
     borderColor: "#232f47",
   },
   rawText: { color: "#94a3b8", fontSize: 11, fontFamily: "monospace", lineHeight: 16 },
+  rawFieldRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 8,
+    paddingVertical: 6,
+    borderTopWidth: 1,
+    borderTopColor: "#1a2338",
+  },
+  rawFieldText: { flex: 1, color: "#94a3b8", fontSize: 11, fontFamily: "monospace", lineHeight: 16 },
+  rawFieldKey: { color: "#7dd3c0", fontWeight: "700" },
+  rawFieldCopyBtn: { paddingHorizontal: 6, paddingVertical: 2 },
+  rawFieldCopyText: { color: "#64748b", fontSize: 14, fontWeight: "700" },
   // Nút "Sao chép" trong hộp JSON (RawJsonBox)
   copyBtn: {
     alignSelf: "flex-end",
