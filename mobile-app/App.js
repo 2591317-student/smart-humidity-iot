@@ -30,6 +30,28 @@ import { StatusBar } from "expo-status-bar";
 import * as Clipboard from "expo-clipboard"; // copy JSON chi tiết (RN core đã bỏ Clipboard)
 
 const DEFAULT_IP = "192.168.4.1"; // IP SoftAP mặc định của ESP (CONTRACT mục 5)
+const REQUEST_TIMEOUT_MS = 8000; // ESP không phản hồi (bận/kẹt) thì tự huỷ sau 8s, tránh treo vô hạn
+
+// fetch() gốc không có timeout — nếu ESP không trả lời (bận xử lý request khác, socket
+// kẹt...) promise sẽ treo vô thời hạn, khiến nút bấm cứ xoay xoay mãi không thoát ra được.
+// Bọc thêm AbortController để tự huỷ sau REQUEST_TIMEOUT_MS.
+async function fetchWithTimeout(url, options) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// Gộp lỗi timeout (AbortError) thành thông báo dễ hiểu thay vì để lộ "Aborted" ra UI.
+function describeFetchError(err) {
+  if (err && err.name === "AbortError") {
+    return "Hết thời gian chờ phản hồi từ ESP (quá " + REQUEST_TIMEOUT_MS / 1000 + " giây).";
+  }
+  return err && err.message ? err.message : String(err);
+}
 
 // ----------------------------------------------------------------------------
 // Hộp JSON/chi tiết kỹ thuật:
@@ -214,18 +236,21 @@ export default function App() {
     const url = getTargetBase() + "/provision";
     setSubmitting(true);
     try {
-      const resp = await fetch(url, {
+      const resp = await fetchWithTimeout(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
 
+      const bodyText = await resp.text();
       let bodyJson = null;
       try {
-        bodyJson = JSON.parse(await resp.text());
+        bodyJson = JSON.parse(bodyText);
       } catch (_) {
-        // body không phải JSON — không sao, tin theo HTTP status (xem dưới).
+        // body không phải JSON — không sao, tin theo HTTP status (xem dưới). Vẫn giữ
+        // bodyText để hiện raw — không bỏ luôn như trước (không parse được ≠ không có gì để xem).
       }
+      const rawDisplay = bodyJson ? JSON.stringify(bodyJson, null, 2) : bodyText || null;
 
       // Tin theo HTTP status (2xx) là tín hiệu thành công chính — board thật ngoài
       // hiện trường có thể trả JSON lệch chuẩn hoặc không có body hợp lệ dù đã
@@ -233,19 +258,19 @@ export default function App() {
       if (resp.ok) {
         const msg = (bodyJson && bodyJson.message) || "Đã lưu cấu hình. Thiết bị sẽ khởi động lại.";
         const macInfo = bodyJson && bodyJson.mac ? "\nMAC thiết bị: " + bodyJson.mac : "";
-        setResult({ ok: true, title: "Cấu hình thành công!", message: msg + macInfo, raw: bodyJson });
+        setResult({ ok: true, title: "Cấu hình thành công!", message: msg + macInfo, raw: rawDisplay });
       } else {
         const detail =
           (bodyJson && (bodyJson.message || bodyJson.error)) ||
           "HTTP " + resp.status + " " + resp.statusText;
-        setResult({ ok: false, title: "Thiết bị từ chối cấu hình", message: detail, raw: bodyJson });
+        setResult({ ok: false, title: "Thiết bị từ chối cấu hình", message: detail, raw: rawDisplay });
       }
     } catch (err) {
       setResult({
         ok: false,
         title: "Không gửi được tới thiết bị",
         message:
-          "Lỗi: " + (err && err.message ? err.message : String(err)) +
+          "Lỗi: " + describeFetchError(err) +
           "\nĐích: " + url +
           "\n\nKiểm tra: điện thoại đã nối đúng WiFi của ESP chưa? IP đúng chưa (mặc định " +
           DEFAULT_IP + ")? Nếu test: mock-esp-server đã chạy và đúng IP LAN chưa?",
@@ -271,34 +296,38 @@ export default function App() {
     setRebooting(true);
     setRebootResult(null);
     try {
-      const resp = await fetch(url, {
+      const resp = await fetchWithTimeout(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: true }),
       });
+      const bodyText = await resp.text();
       let bodyJson = null;
       try {
-        bodyJson = JSON.parse(await resp.text());
-      } catch (_) {}
+        bodyJson = JSON.parse(bodyText);
+      } catch (_) {
+        // body không phải JSON — vẫn giữ bodyText để hiện raw, không bỏ trắng.
+      }
+      const rawDisplay = bodyJson ? JSON.stringify(bodyJson, null, 2) : bodyText || null;
 
       if (resp.ok) {
         setRebootResult({
           ok: true,
           summary: (bodyJson && bodyJson.message) || "Đang khởi động lại…",
-          raw: bodyJson ? JSON.stringify(bodyJson, null, 2) : null,
+          raw: rawDisplay,
         });
       } else {
         setRebootResult({
           ok: false,
           summary: (bodyJson && bodyJson.message) || "Thiết bị từ chối lệnh (HTTP " + resp.status + ").",
-          raw: bodyJson ? JSON.stringify(bodyJson, null, 2) : null,
+          raw: rawDisplay,
         });
       }
     } catch (err) {
       setRebootResult({
         ok: false,
         summary: "Không gửi được lệnh tới thiết bị.",
-        raw: "Lỗi: " + (err && err.message ? err.message : String(err)) + "\nĐích: " + url,
+        raw: "Lỗi: " + describeFetchError(err) + "\nĐích: " + url,
       });
     } finally {
       setRebooting(false);
@@ -315,7 +344,7 @@ export default function App() {
     setChecking(true);
     setCheckResult(null);
     try {
-      const resp = await fetch(url, { method: "GET" });
+      const resp = await fetchWithTimeout(url, { method: "GET" });
       const text = await resp.text();
       let pretty = text;
       let parsed = null;
@@ -335,7 +364,7 @@ export default function App() {
         ok: false,
         summary: "Không tới được thiết bị.",
         raw:
-          "Lỗi: " + (err && err.message ? err.message : String(err)) + "\nĐích: " + url +
+          "Lỗi: " + describeFetchError(err) + "\nĐích: " + url +
           "\n\nKiểm tra: điện thoại đã nối đúng WiFi của ESP chưa? IP đúng chưa (mặc định " +
           DEFAULT_IP + ")?",
       });
@@ -366,7 +395,7 @@ export default function App() {
               {result.title}
             </Text>
             <Text style={styles.resultMessage}>{result.message}</Text>
-            {result.raw ? <RawJsonBox text={JSON.stringify(result.raw, null, 2)} /> : null}
+            {result.raw ? <RawJsonBox text={result.raw} /> : null}
             <Pressable style={[styles.btnPrimary, { width: "100%" }]} onPress={resetForm}>
               <Text style={styles.btnPrimaryText}>{result.ok ? "OK" : "Thử lại"}</Text>
             </Pressable>

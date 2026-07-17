@@ -229,6 +229,7 @@ function leaveDashboard() {
   g_lastStatus = null;
   g_lastSensorTs = 0;
   g_hasSensorData = false;
+  g_lastSensorClientMs = 0;
 
   // Reset form/UI.
   els.cfgMsg.hidden = true;
@@ -260,6 +261,14 @@ function attachListeners() {
     // — timer 5s trong attachListeners tự đếm tiếp khi không có dữ liệu mới.
     g_hasSensorData = t !== null || h !== null;
     g_lastSensorTs = s.timestamp && s.timestamp > 0 ? s.timestamp : 0;
+
+    // Mốc thời gian THEO ĐỒNG HỒ TRÌNH DUYỆT lúc nhận /sensor — dùng làm tín hiệu
+    // online dự phòng trong isDeviceOnline(), KHÔNG phụ thuộc lastSeen/timestamp do
+    // ESP tự tính (những field đó = 0 nếu ESP chưa đồng bộ NTP được, xem ghi chú ở
+    // isDeviceOnline()). /sensor chỉ được ESP đẩy khi nó đang thật sự sống nên bản
+    // thân việc listener này bắn là đủ để coi là "còn kết nối", bất kể NTP.
+    g_lastSensorClientMs = Date.now();
+
     renderUpdatedAt();
 
     // Đẩy vào biểu đồ (chỉ khi có ít nhất 1 giá trị hợp lệ), kèm trạng thái máy phun
@@ -297,7 +306,7 @@ function attachListeners() {
 }
 
 // ============================================================================
-//  PHÁT HIỆN ONLINE/OFFLINE — theo lastSeen (KHÔNG tin cờ esp1Online)
+//  PHÁT HIỆN ONLINE/OFFLINE — 2 TÍN HIỆU ĐỘC LẬP, chỉ cần 1 cái mới là coi online
 //
 //  Bài toán presence: thiết bị KHÔNG thể tự báo "tôi offline" (mất mạng thì báo
 //  sao được). Vì vậy VIEWER (web) tự suy: nếu lastSeen quá cũ so với giờ hiện tại
@@ -307,12 +316,22 @@ function attachListeners() {
 //  cập nhật thì lật sang offline. Vì onValue chỉ bắn khi dữ liệu ĐỔI (ESP chết thì
 //  ngừng bắn), ta chạy thêm 1 timer client tự đánh giá lại định kỳ.
 //
-//  Lưu ý: dựa vào lastSeen (epoch giây từ NTP của ESP) so với đồng hồ trình duyệt.
-//  Cả hai thường đã đồng bộ NTP nên lệch không đáng kể; để ngưỡng rộng cho an toàn.
+//  Tín hiệu 1 — lastSeen: dựa vào lastSeen (epoch giây từ NTP của ESP) so với đồng
+//  hồ trình duyệt. Vấn đề: lastSeen = 0 vĩnh viễn nếu ESP CHƯA/KHÔNG đồng bộ được
+//  SNTP (xem esp1_main/main.cpp, nowEpoch()) — lúc đó tín hiệu này luôn báo offline
+//  dù thiết bị vẫn đang chạy/đẩy dữ liệu bình thường.
+//
+//  Tín hiệu 2 — đã nhận /sensor mới gần đây, đo bằng ĐỒNG HỒ TRÌNH DUYỆT (không
+//  dùng field timestamp trong payload vì nó cũng lấy từ nowEpoch(), dính lỗi y hệt
+//  tín hiệu 1). ESP chỉ đẩy /sensor khi đang thật sự sống nên đây là tín hiệu dự
+//  phòng đáng tin cậy, không phụ thuộc NTP của ESP.
+//
+//  isDeviceOnline() coi là online nếu MỘT TRONG HAI tín hiệu còn mới.
 // ============================================================================
 const ONLINE_TIMEOUT_DEFAULT_S = 15;  // fallback khi /webSettings chưa có onlineTimeoutSec
 let g_onlineTimeoutSec = ONLINE_TIMEOUT_DEFAULT_S; // lấy từ /webSettings — align với chu kỳ push firmware
 let g_lastStatus = null;       // /status gần nhất (để timer re-check)
+let g_lastSensorClientMs = 0;  // Date.now() lúc nhận /sensor gần nhất (tín hiệu 2, xem trên)
 let g_onlineTimer = null;      // timer tự lật offline khi lastSeen quá hạn
 let g_correctingOnline = false; // chặn ghi chồng khi đang chờ round-trip ghi /status/esp1Online
 
@@ -325,13 +344,28 @@ let g_cfgMax = null;
 let g_prevOnline = null;   // trạng thái online lần render trước — bắn toast khi ĐỔI (null = chưa biết)
 let g_lastSensorTs = 0;    // timestamp /sensor gần nhất (epoch giây) — cho dòng "Cập nhật: X trước"
 let g_hasSensorData = false; // đã từng nhận số đo (dù thiết bị chưa gửi timestamp)
+let g_serverCfg = null;    // {mode,hset,deadband} MỚI NHẤT từ /config — dùng dirty-check khi Lưu cấu hình
+let g_serverOnlineTimeoutSec = null; // onlineTimeoutSec MỚI NHẤT từ /webSettings — dirty-check tương tự
 
 function isDeviceOnline(st) {
-  if (!st) return false;
-  const lastSeen = Number(st.lastSeen) || 0;
-  if (lastSeen <= 0) return false;              // chưa có NTP / chưa từng thấy heartbeat
-  const nowSec = Math.floor(Date.now() / 1000);
-  return (nowSec - lastSeen) < g_onlineTimeoutSec;
+  const nowMs = Date.now();
+
+  // Tín hiệu 1: /status/lastSeen (epoch giây do ESP tự tính qua NTP).
+  let onlineByStatus = false;
+  if (st) {
+    const lastSeen = Number(st.lastSeen) || 0;
+    if (lastSeen > 0) {                         // 0 = chưa có NTP / chưa từng thấy heartbeat
+      const nowSec = Math.floor(nowMs / 1000);
+      onlineByStatus = (nowSec - lastSeen) < g_onlineTimeoutSec;
+    }
+  }
+
+  // Tín hiệu 2: mới nhận /sensor gần đây (đồng hồ trình duyệt) — vẫn đúng dù ESP
+  // chưa đồng bộ NTP được (xem ghi chú khối trên).
+  const onlineBySensor =
+    g_lastSensorClientMs > 0 && (nowMs - g_lastSensorClientMs) < g_onlineTimeoutSec * 1000;
+
+  return onlineByStatus || onlineBySensor;
 }
 
 // Đổi số giây thành chuỗi "X giây/phút/giờ trước" cho label mất kết nối.
@@ -571,6 +605,7 @@ function renderConfig(cfg) {
   const hset = typeof cfg.hset === "number" ? cfg.hset : 70;
   const deadband = typeof cfg.deadband === "number" ? cfg.deadband : 5;
   const mode = VALID_MODES.includes(cfg.mode) ? cfg.mode : "continuous";
+  g_serverCfg = { mode, hset, deadband };
 
   // Ngưỡng Min/Max suy từ GIÁ TRỊ SERVER (không phải giá trị đang gõ trong form):
   // đẩy sang biểu đồ (vùng Deadband) + card Độ ẩm (thanh vị trí + dòng ngữ cảnh).
@@ -607,6 +642,7 @@ function renderConfig(cfg) {
 // (ESP1 sẽ subscribe /config cho luồng 2 chiều với sensor node, không cần biết field này).
 function renderWebSettings(ws) {
   const onlineTimeout = typeof ws.onlineTimeoutSec === "number" ? ws.onlineTimeoutSec : ONLINE_TIMEOUT_DEFAULT_S;
+  g_serverOnlineTimeoutSec = onlineTimeout;
 
   // Dùng ngay (không chờ "editing") — đây là giá trị isDeviceOnline() đọc mỗi lần timer
   // re-check, cần cập nhật kể cả khi admin đang gõ dở field khác trong form.
@@ -719,18 +755,27 @@ els.cfgForm.addEventListener("submit", async (e) => {
     return showCfgMsg("Ngưỡng offline phải nằm trong khoảng 5–300 giây.", "error");
   }
 
+  // Dirty-check: /config (mode/hset/deadband, ESP1 đọc) và /webSettings (onlineTimeoutSec,
+  // chỉ web dùng) là 2 nguồn sự thật riêng. Chỉ ghi path nào THỰC SỰ đổi so với giá trị
+  // server gần nhất — tránh sửa mỗi ngưỡng offline cũng làm /config đổi lastUpdate (và ngược lại).
+  const cfgChanged = !g_serverCfg ||
+    g_serverCfg.mode !== mode || g_serverCfg.hset !== hset || g_serverCfg.deadband !== deadband;
+  const webSettingsChanged = g_serverOnlineTimeoutSec === null || g_serverOnlineTimeoutSec !== onlineTimeoutSec;
+
+  if (!cfgChanged && !webSettingsChanged) {
+    return showCfgMsg("Không có gì thay đổi để lưu.", "ok");
+  }
+
   els.cfgBtn.disabled = true;
   const oldLabel = els.cfgBtn.textContent;
   els.cfgBtn.textContent = "Đang lưu...";
 
   try {
-    // Ghi 2 path RIÊNG: /config (mode/hset/deadband — ESP1 đọc) và /webSettings
-    // (onlineTimeoutSec — chỉ web dùng). Cùng 1 form nhưng khác nguồn sự thật.
     const email = currentUser ? currentUser.email : "";
-    await Promise.all([
-      writeConfig({ mode, hset, deadband }, email),
-      writeWebSettings(onlineTimeoutSec, email)
-    ]);
+    const writes = [];
+    if (cfgChanged) writes.push(writeConfig({ mode, hset, deadband }, email));
+    if (webSettingsChanged) writes.push(writeWebSettings(onlineTimeoutSec, email));
+    await Promise.all(writes);
     els.cfgMsg.hidden = true; // dọn thông báo lỗi cũ (nếu có) — thành công báo bằng toast
     showToast("✓ Đã lưu cấu hình", "ok");
   } catch (err) {

@@ -111,6 +111,7 @@ static const uint32_t PUSH_INTERVAL_MS   = 4000;   // chu kỳ đẩy sensor/sta
 static const uint32_t CONFIG_POLL_INTERVAL_MS = 10000; // chu kỳ đọc lại /config (~10s, xem lý do dưới)
 static const uint32_t WIFI_RETRY_MS       = 5000;   // chu kỳ thử reconnect WiFi
 static const uint32_t SENSOR_STALE_MS     = 15000;  // quá lâu không có gói ESP-NOW -> coi cảm biến mất
+static const uint32_t NTP_RETRY_MS        = 20000;  // chưa sync NTP thì cứ ~20s thử configTime() lại
 
 // ============================================================================
 //  ĐỐI TƯỢNG FIREBASE.
@@ -151,6 +152,7 @@ bool g_sensorStale = false;       // true khi mất gói ESP2 quá lâu -> NGỪ
 // --- Mốc thời gian quản lý chu kỳ ---
 uint32_t g_lastPushMs      = 0;
 uint32_t g_lastWifiTryMs   = 0;
+uint32_t g_lastNtpTryMs    = 0;   // mốc lần thử configTime() gần nhất khi chưa sync (xem loop())
 
 // --- Cờ Firebase đã khởi tạo ---
 bool g_fbInited      = false;
@@ -521,6 +523,19 @@ void loop() {
       WiFi.begin(g_cfg.ssid.c_str(), g_cfg.pass.c_str());
     }
     // Vẫn tiếp tục chạy Deadband bên dưới (điều khiển relay không phụ thuộc mạng).
+  }
+
+  // --- SNTP: configTime() ở connectWiFi() chỉ bắn 1 lần lúc boot, không tự retry.
+  // Nếu gói NTP đầu tiên bị rớt/mạng chập chờn đúng lúc đó, nowEpoch() sẽ trả 0 vĩnh
+  // viễn cả phiên chạy -> /sensor & /status luôn ghi timestamp/lastSeen = 0, khiến
+  // web tưởng thiết bị offline dù vẫn đang đẩy dữ liệu bình thường. Nên cứ mỗi
+  // NTP_RETRY_MS mà vẫn chưa sync được thì gọi lại configTime() tới khi thành công.
+  if (WiFi.status() == WL_CONNECTED && nowEpoch() == 0) {
+    if (now - g_lastNtpTryMs >= NTP_RETRY_MS) {
+      g_lastNtpTryMs = now;
+      Serial.println(F("[NTP] Chua dong bo -> thu configTime() lai..."));
+      configTime(0, 0, "pool.ntp.org", "time.nist.gov");
+    }
   }
 
   // --- Xử lý dữ liệu cảm biến mới -> chạy Deadband ngay khi có gói ---
